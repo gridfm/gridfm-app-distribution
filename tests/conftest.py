@@ -41,12 +41,8 @@ def generate_processed_test_data():
     Skipped silently if the stats file already exists (e.g., second pytest run
     in the same environment without cleaning the processed/ directory).
     """
-    for processed in glob.glob("tests/data/*/processed"):
-        shutil.rmtree(processed, ignore_errors=True)
-
     if os.path.exists(_STATS_PATH):
-        os.remove(_STATS_PATH)
-        os.makedirs(os.path.dirname(_STATS_PATH), exist_ok=True)
+        return
 
     with open(_CONFIG_PATH) as f:
         config_dict = yaml.safe_load(f)
