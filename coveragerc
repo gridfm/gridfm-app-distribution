@@ -1,0 +1,8 @@
+[run]
+branch = True
+source = gridfm-dist-app
+
+[report]
+show_missing = True
+skip_covered = True
+
