@@ -192,18 +192,17 @@ class HeteroGridDatasetDisk(Dataset):
             gen_df["gen_index"] = gen_df.index  # Use actual index as generator ID
 
             #####################
-            #data["bus"].y = data["bus"].x[:, : (VA_H + 1)].clone()
-            # Append the optional VLD target column.
-            bus_y_base = torch.tensor(bus_df[["Pd", "Qd", "Qg", "Vm", "Va"]].values,dtype=torch.float)
-            bus_y_vld = torch.tensor(bus_df[vld_bus_target_features].values,dtype=torch.float)
-            data["bus"].y = torch.cat([bus_y_base, bus_y_vld], dim=1)
+            # Additional columns for the VLD task
+            bus_y_base = torch.tensor(bus_df[["Pd", "Qd", "Qg", "Vm", "Va"]].values, dtype=torch.float) # Base label columns: [Pd, Qd, Qg, Vm, Va]  (indices PD_H..VA_H = 0..4)
+            bus_y_vld = torch.tensor(bus_df[vld_bus_target_features].values, dtype=torch.float) # Optional VLD target column: bus_status_target  (index BUS_STATUS_TARGET = 5)
+            bus_y_pg = torch.tensor(bus_df[["Pg"]].values, dtype=torch.float) # Net per-bus active generation Pg (gens + ext_grid), APPENDED as the last label column (index PG_BUS_H = 6).
+            data["bus"].y = torch.cat([bus_y_base, bus_y_vld, bus_y_pg], dim=1)
             #####################
 
             data["gen"].y = data["gen"].x[:, : (PG_H + 1)].clone()
 
             # Bus-Bus edges
             branch_df = branch_groups.get_group(scenario)
-
             forward_edges = torch.tensor(
                 branch_df[["from_bus", "to_bus"]].values.T,
                 dtype=torch.long,
@@ -212,7 +211,6 @@ class HeteroGridDatasetDisk(Dataset):
                 branch_df[forward_branch_features].values,
                 dtype=torch.float,
             )
-
             reverse_edges = torch.tensor(
                 branch_df[["to_bus", "from_bus"]].values.T,
                 dtype=torch.long,

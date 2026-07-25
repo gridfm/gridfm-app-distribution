@@ -4,7 +4,8 @@ import warnings
 from datetime import datetime
 from gridfm_dist_app.cli import main_cli, benchmark_cli
 
-
+import subprocess
+import os
 
 def _warn_mp_context_on_linux(mp_context):
     """On Linux, recommend 'spawn' when mp_context is unset, 'fork', or 'forkserver'."""

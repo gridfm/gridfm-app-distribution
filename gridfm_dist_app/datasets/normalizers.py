@@ -25,6 +25,7 @@ from gridfm_dist_app.datasets.globals import (
     QD_OUT,
     PG_OUT_GEN,
     BUS_STATUS_TARGET,
+    PG_BUS_H,
 
     # Generator feature indices
     PG_H,
@@ -207,6 +208,7 @@ class HeteroDataMVANormalizer(Normalizer):
         data.y_dict["bus"][:, QD_H] /= self.baseMVA
         data.y_dict["bus"][:, QG_H] /= self.baseMVA
         data.y_dict["bus"][:, VA_H] *= torch.pi / 180.0
+        data.y_dict["bus"][:, PG_BUS_H] /= self.baseMVA
 
         # --- Generator input normalization --- PG, MIN_PG, MAX_PG, C0, C1, C2 (6)
         data.x_dict["gen"][:, PG_H] /= self.baseMVA
@@ -282,6 +284,7 @@ class HeteroDataMVANormalizer(Normalizer):
         data.y_dict["bus"][:, PD_H] *= self.baseMVA
         data.y_dict["bus"][:, QD_H] *= self.baseMVA
         data.y_dict["bus"][:, QG_H] *= self.baseMVA
+        data.y_dict["bus"][:, PG_BUS_H] *= self.baseMVA
 
         # -------- GENERATOR INPUT INVERSE NORMALIZATION --------
         data.x_dict["gen"][:, PG_H] *= self.baseMVA
@@ -505,6 +508,7 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         data.y_dict["bus"][:, QD_H] /= b
         data.y_dict["bus"][:, QG_H] /= b
         data.y_dict["bus"][:, VA_H] *= torch.pi / 180.0
+        data.y_dict["bus"][:, PG_BUS_H] *= self.baseMVA
 
         # --- Generator input normalization ---
         data.x_dict["gen"][:, PG_H] /= g
@@ -570,6 +574,7 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         data.y_dict["bus"][:, PD_H] *= b
         data.y_dict["bus"][:, QD_H] *= b
         data.y_dict["bus"][:, QG_H] *= b
+        data.y_dict["bus"][:, PG_BUS_H] *= self.baseMVA
 
         # -------- GENERATOR INPUT INVERSE NORMALIZATION --------
         data.x_dict["gen"][:, PG_H] *= g

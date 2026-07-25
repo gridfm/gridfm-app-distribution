@@ -128,11 +128,12 @@ class GNS_heterogeneous(nn.Module):
             self.norms_gen.append(nn.LayerNorm(out_dim * self.heads))
 
         # Separate shared MLPs to produce final bus/gen outputs (predictions y)
+        self._phys_bus_out = VA_H + 1 - VM_H  # matches bus_mask / bus_fixed
         self.mlp_bus = nn.Sequential(
             nn.Linear(self.hidden_dim * self.heads, self.hidden_dim),
             nn.LayerNorm(self.hidden_dim),
             nn.LeakyReLU(),
-            nn.Linear(self.hidden_dim, self.output_bus_dim),
+            nn.Linear(self.hidden_dim, self._phys_bus_out),
         )
 
         #############################

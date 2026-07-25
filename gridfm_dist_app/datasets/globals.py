@@ -44,6 +44,7 @@ QD_OUT = 5
 PHYSICAL_BUS_DIM = 4        # Physical bus outputs predicted by the model for VLD tasks
 BUS_STATUS_TARGET = 5       # post-contingency energized/de-energized target
 BUS_STATUS_LOGIT_OUT = 4    # Extra model output columns for VLD tasks
+PG_BUS_H = 6   # net active generation per bus (gens + ext_grid), MW -> p.u.
 
 # ================================
 # === GENERATOR FEATURE INDICES ==

@@ -18,13 +18,13 @@ from torch_geometric.data import HeteroData
 
 def test_edge_flows():
     data_dict = torch.load(
-        "tests/data/case14_ieee/processed/data_index_0.pt",
+        "tests/data/scenario_33radial/processed/data_index_0.pt",
         weights_only=True,
     )
     data = HeteroData.from_dict(data_dict)
 
     node_stats = torch.load(
-        "tests/data/case14_ieee/processed/data_stats_HeteroDataMVANormalizer.pt",
+        "tests/data/scenario_33radial/processed/data_stats_HeteroDataMVANormalizer.pt",
         weights_only=True,
     )
     with open("tests/config/datamodule_test_base_config.yaml", "r") as f:

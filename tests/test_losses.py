@@ -2,7 +2,7 @@ import pytest
 import torch
 from gridfm_dist_app.datasets.hetero_powergrid_datamodule import LitGridHeteroDataModule
 from gridfm_dist_app.io.param_handler import NestedNamespace
-from gridfm_dist_app.datasets.globals import VM_H, VA_H, QG_H
+from gridfm_dist_app.datasets.globals import VM_H, VA_H, QG_H, PG_BUS_H
 from torch_scatter import scatter_add
 from gridfm_dist_app.models.utils import (
     ComputeBranchFlow,
@@ -42,21 +42,14 @@ def test_pbe_loss_zero_with_real_data(small_grid_data_module):
     num_bus = batch.x_dict["bus"].size(0)
     bus_edge_index = batch.edge_index_dict[("bus", "connects", "bus")]
     bus_edge_attr = batch.edge_attr_dict[("bus", "connects", "bus")]
-    _, gen_to_bus_index = batch.edge_index_dict[("gen", "connected_to", "bus")]
 
-    agg_gen_on_bus = scatter_add(
-        batch.y_dict["gen"],
-        gen_to_bus_index,
-        dim=0,
-        dim_size=num_bus,
-    )
-    # output_agg = torch.cat([batch.y_dict["bus"], agg_gen_on_bus], dim=1)
+    # Build the PBE target entirely from the bus label so Pg and Qg come from the SAME source and per-unit base
     target = torch.stack(
         [
-            batch.y_dict["bus"][:, VM_H],
-            batch.y_dict["bus"][:, VA_H],
-            agg_gen_on_bus.squeeze(),
-            batch.y_dict["bus"][:, QG_H],
+            batch.y_dict["bus"][:, VM_H],       # VM_OUT = 0
+            batch.y_dict["bus"][:, VA_H],       # VA_OUT = 1
+            batch.y_dict["bus"][:, PG_BUS_H],   # PG_OUT = 2  (net bus Pg, same base as Qg)
+            batch.y_dict["bus"][:, QG_H],       # QG_OUT = 3
         ],
         dim=1,
     )

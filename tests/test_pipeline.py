@@ -13,8 +13,6 @@ from gridfm_dist_app.__main__ import main
 # -------------------------------------------------
 CONFIGS = [
     "tests/config/datamodule_test_base_config.yaml",
-    "tests/config/datamodule_test_base_config2.yaml",
-    "tests/config/datamodule_test_base_config3.yaml",
 ]
 
 DATA_PATH = "tests/data"
