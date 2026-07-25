@@ -6,7 +6,7 @@ Specifically it:
   1. Runs LitGridHeteroDataModule.setup("fit") which triggers
      HeteroGridDatasetDisk to write the ``processed/`` .pt files.
   2. Persists the fitted normalizer stats as
-     ``tests/data/case14_ieee/processed/data_stats_HeteroDataMVANormalizer.pt``
+     ``tests/data/scenario_33radial/processed/data_stats_HeteroDataMVANormalizer.pt``
      so that test_edge_flows.py and test_simulate_measurements.py can load
      them directly without needing a full DM setup.
 """
@@ -21,7 +21,7 @@ from gridfm_dist_app.datasets.hetero_powergrid_datamodule import LitGridHeteroDa
 from gridfm_dist_app.datasets.normalizers import HeteroDataMVANormalizer
 from gridfm_dist_app.io.param_handler import NestedNamespace
 
-_STATS_PATH = "tests/data/case14_ieee/processed/data_stats_HeteroDataMVANormalizer.pt"
+_STATS_PATH = "tests/data/scenario_33radial/processed/data_stats_HeteroDataMVANormalizer.pt"
 _CONFIG_PATH = "tests/config/datamodule_test_base_config.yaml"
 
 
