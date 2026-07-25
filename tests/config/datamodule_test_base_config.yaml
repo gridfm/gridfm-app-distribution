@@ -1,0 +1,59 @@
+seed: 42
+
+data:
+  networks: ["scenario_33radial"]   # Networks loaded as separate folders
+  scenarios: [57155]                # Number of scenarios loaded from the CSV files
+  normalization: "HeteroDataMVANormalizer"  # data normalization to pu on MVA base
+  baseMVA: 100                      # Base MVA for normalization
+  mask_value: 0.0                   # Initial value for masked parameters
+  val_ratio: 0.1                    # ratio of data for validation
+  test_ratio: 0.1                   # ratio of data for testing
+  workers: 4
+
+model:
+  type: GNS_heterogeneous           # was GPSTransformer (not available in new repo)
+  attention_head: 8
+  dropout: 0.1
+  edge_dim: 13                      # Additional edge features BRANCH_BASE_STATUS_E(11) + BRANCH_CONT_E(12)
+  hidden_size: 256
+  input_bus_dim: 17                 # Additional bus features + BUS_BASE_STATUS_H(15) + BUS_CONT_H(16)
+  input_gen_dim: 6                  # Additional generator node-type feature dim
+  output_bus_dim: 5
+  output_gen_dim: 1
+  num_layers: 8
+
+training:
+  batch_size: 1
+  epochs: 20
+  losses: ["MaskedMSE", "PBE", "VLDTopologyLoss"]
+  loss_weights: [0.05, 0.55, 0.40]
+
+
+  loss_args: # parameters for tuning the loss functions
+    - {}                           # MaskedMSE tuning can be activated for fien tuning tasks
+    - {}                           # PBE tuning can be activated for fien tuning tasks
+    - input_state_threshold: 0.5   # VLDTopologyLoss tuning
+      prediction_threshold: 0.5
+      topology_weight: 1.0
+      target_anchor_weight: 0.25
+      off_vm_weight: 1.0
+      on_vm_weight: 0.5
+      unreachable_l1_weight: 1.0
+      topology_confidence_gamma: 10.0
+  accelerator: auto
+  devices: auto
+  strategy: auto
+
+optimizer:
+  learning_rate: 0.0001
+  beta1: 0.9
+  beta2: 0.999
+  lr_decay: 0.7
+  lr_patience: 10
+
+callbacks:
+  patience: 100
+  tol: 0
+
+task:
+  task_name: VoltageLossDetection

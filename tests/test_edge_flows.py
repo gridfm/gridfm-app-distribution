@@ -5,7 +5,6 @@ import yaml
 from gridfm_dist_app.models.utils import (
     ComputeBranchFlow,
     ComputeNodeInjection,
-    PhysicsDecoderSE,
 )
 from gridfm_dist_app.training.loss import LossPerDim
 from gridfm_dist_app.datasets.globals import (

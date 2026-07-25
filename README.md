@@ -6,7 +6,7 @@ Specialised training tasks can be developed for specific distribution applicatio
 
 # Installation
 
-Create and activate a virtual environment (make sure you use the right python version = 3.10, 3.11 or 3.12. I highly recommend 3.12)
+Create and activate a virtual environment (make sure you use the right python version = 3.10, 3.11, 3.12 or 3.13.)
 ```
 python -m venv venv
 source venv/bin/activate
