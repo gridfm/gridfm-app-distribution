@@ -62,9 +62,13 @@ def test_pbe_loss_zero_with_real_data(small_grid_data_module):
         target,
         batch.x_dict["bus"],
     )
-    assert torch.max(torch.abs(residual_P)) < 1e-4, (
-        f"Active Residuals are not zero! {torch.max(torch.abs(residual_P))}"
+    # Power balance only holds on ENERGIZED buses.
+    # In contingency scenarios an islanded sub-network is de-energized (Vm == 0), where residuals are physically meaningless.
+    # Mask to include only energized buses before asserting.
+    energized = batch.x_dict["bus"][:, VM_H] > 1e-6
+    assert torch.max(torch.abs(residual_P[energized])) < 1e-4, (
+        f"Active residuals nonzero on energized buses! {torch.max(torch.abs(residual_P[energized]))}"
     )
-    assert torch.max(torch.abs(residual_Q)) < 1e-4, (
-        f"Reactive Residuals not zero! {torch.max(torch.abs(residual_Q))}"
+    assert torch.max(torch.abs(residual_Q[energized])) < 1e-4, (
+        f"Reactive residuals nonzero on energized buses! {torch.max(torch.abs(residual_Q[energized]))}"
     )

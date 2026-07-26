@@ -18,17 +18,12 @@ from gridfm_dist_app.datasets.globals import (
     YFF_TT_I,
     YFT_TF_R,
     YFT_TF_I,
+    B_ON,
 )
 
 # NOTE (VLD integration):
-# In gridfm-graphkit, the physics decoders (PhysicsDecoderOPF / PF / SE) are
-# registered in this module. In gridfm-dist-app they have been moved to
-# gridfm_dist_app/tasks/utils.py, where the new PhysicsDecoderVLD lives
-# alongside them. Registering them here as well would raise a duplicate-key
-# KeyError from PHYSICS_DECODER_REGISTRY, so the registrations are intentionally
-# kept only in tasks/utils.py. This module now provides the shared physics
-# building blocks only.
-
+# In gridfm-graphkit, the physics decoders (PhysicsDecoderOPF / PF / SE) are registered in this module.
+# In gridfm-dist-app they have been moved to gridfm_dist_app/tasks/utils.py with the new PhysicsDecoderVLD decoder
 
 class ComputeBranchFlow(nn.Module):
     """Compute sending-end branch flows (Pf, Qf) for all branches."""
@@ -53,7 +48,10 @@ class ComputeBranchFlow(nn.Module):
         Pft = Vf_r * Ift_r + Vf_i * Ift_i
         Qft = Vf_i * Ift_r - Vf_r * Ift_i
 
-        return Pft, Qft
+        # Respect branch on/off status: a tripped branch (B_ON == 0) carries no flow, even though its admittance columns remain populated in edge_attr.
+        # Without this, an open feeder injects a phantom flow at its energized endpoint (e.g. the slack), corrupting node injections and PBE residuals.
+        b_on = edge_attr[:, B_ON]
+        return Pft * b_on, Qft * b_on
 
 
 class ComputeNodeInjection(nn.Module):

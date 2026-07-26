@@ -13,6 +13,7 @@ from gridfm_dist_app.datasets.globals import (
     P_E,
     Q_E,
 )
+from gridfm_dist_app.tasks.utils import PhysicsDecoderSE
 from torch_geometric.data import HeteroData
 
 

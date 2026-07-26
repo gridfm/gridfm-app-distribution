@@ -20,7 +20,7 @@ from gridfm_dist_app.datasets.globals import (
     VM_OUT,
     PG_OUT_GEN,
     ##############
-    BUS_STATUS_LOGIT_OUT,
+    PHYSICAL_BUS_DIM,
     ##############
     # Generator feature indices
     PG_H,
@@ -128,12 +128,21 @@ class GNS_heterogeneous(nn.Module):
             self.norms_gen.append(nn.LayerNorm(out_dim * self.heads))
 
         # Separate shared MLPs to produce final bus/gen outputs (predictions y)
-        self._phys_bus_out = VA_H + 1 - VM_H  # matches bus_mask / bus_fixed
+        self._state_bus_out = VA_H + 1 - VM_H
+        self._decoded_bus_out = PHYSICAL_BUS_DIM + (1 if self.is_vld_task else 0)
+        if self.output_bus_dim != self._decoded_bus_out:
+            raise ValueError(
+                f"model.output_bus_dim={self.output_bus_dim} is inconsistent with task "
+                f"'{self.task}': the model emits {PHYSICAL_BUS_DIM} physical bus columns"
+                + (" plus 1 status logit" if self.is_vld_task else "")
+                + f", i.e. {self._decoded_bus_out}.",
+            )
+
         self.mlp_bus = nn.Sequential(
             nn.Linear(self.hidden_dim * self.heads, self.hidden_dim),
             nn.LayerNorm(self.hidden_dim),
             nn.LeakyReLU(),
-            nn.Linear(self.hidden_dim, self._phys_bus_out),
+            nn.Linear(self.hidden_dim, self._state_bus_out),
         )
 
         #############################
@@ -152,7 +161,7 @@ class GNS_heterogeneous(nn.Module):
             nn.Linear(self.hidden_dim, self.output_gen_dim),
         )
 
-        # mask param (kept similar to your original)
+        # mask parameters
         self.activation = nn.LeakyReLU()
         self.branch_flow_layer = ComputeBranchFlow()
         self.node_injection_layer = ComputeNodeInjection()

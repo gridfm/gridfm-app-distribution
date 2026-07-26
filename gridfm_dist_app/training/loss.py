@@ -23,6 +23,7 @@ from gridfm_dist_app.datasets.globals import (
     PD_OUT,
     QD_OUT,
     BUS_STATUS_TARGET,
+    BUS_STATUS_LOGIT_OUT,
     # Edge feature indices
     YFF_TT_R,
     YFF_TT_I,
@@ -82,7 +83,26 @@ class BaseLoss(nn.Module, ABC):
 class MaskedMSELoss(BaseLoss):
     """
     Mean Squared Error loss computed only on masked elements.
+
+    Heterogeneous convention: ``pred``/``target``/``mask`` are the per-node-type
+    dicts produced by the model, ``batch.y_dict`` and ``batch.mask_dict``.
+
+    The three bus tensors use three DIFFERENT column layouts, so they can only be
+    compared through an explicit index map (indexing them with a single mask is
+    what raised ``TypeError: unhashable type: 'dict'`` / shape errors before):
+
+      pred_dict["bus"]  : [Vm, Va, Pg, Qg] (+ status_logit for VLD)  -> *_OUT indices
+      target_dict["bus"]: [Pd, Qd, Qg, Vm, Va, bus_status_target, Pg] -> *_H indices
+      mask_dict["bus"]  : the 17-wide bus INPUT layout                -> *_H indices
+
+    The label and mask layouts agree only on columns 0..4 (Pd, Qd, Qg, Vm, Va);
+    beyond that they diverge (column 6 is PG_BUS_H in the label but PV_H in the
+    input/mask layout). Only the reconstruction channels inside that shared
+    region are used, so widening the bus label cannot silently misalign the loss.
     """
+
+    # (prediction column, label/mask column) for the masked reconstruction channels.
+    BUS_COLS = ((VM_OUT, VM_H), (VA_OUT, VA_H), (QG_OUT, QG_H))
 
     def __init__(self, loss_args, args):
         super(MaskedMSELoss, self).__init__()
@@ -97,7 +117,25 @@ class MaskedMSELoss(BaseLoss):
         mask=None,
         model=None,
     ):
-        loss = F.mse_loss(pred[mask], target[mask], reduction=self.reduction)
+        if not isinstance(pred, dict):
+            loss = F.mse_loss(pred[mask], target[mask], reduction=self.reduction)
+            return {"loss": loss, "Masked MSE loss": loss.detach()}
+
+        pred_bus, target_bus, mask_bus = pred["bus"], target["bus"], mask["bus"]
+        selected_pred = [pred_bus[:, p][mask_bus[:, t]] for p, t in self.BUS_COLS]
+        selected_target = [target_bus[:, t][mask_bus[:, t]] for _, t in self.BUS_COLS]
+
+        gen_mask = mask["gen"][:, : (PG_H + 1)]
+        selected_pred.append(pred["gen"][:, : (PG_H + 1)][gen_mask])
+        selected_target.append(target["gen"][:, : (PG_H + 1)][gen_mask])
+
+        selected_pred = torch.cat(selected_pred)
+        selected_target = torch.cat(selected_target)
+
+        if selected_pred.numel() == 0:
+            loss = pred_bus.sum() * 0.0
+        else:
+            loss = F.mse_loss(selected_pred, selected_target, reduction=self.reduction)
         return {"loss": loss, "Masked MSE loss": loss.detach()}
 
 
