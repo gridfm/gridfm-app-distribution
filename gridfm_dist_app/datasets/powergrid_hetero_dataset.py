@@ -13,15 +13,26 @@ from gridfm_dist_app.datasets.globals import VA_H, PG_H
 #####################
 def _optional_cols(df, cols, default_value):
     """
-    Return a list of columns guaranteed to exist in df.
-    Missing columns are created and filled with the corresponding default value.
+    Return a list of column names guaranteed to exist in df.
+
+    Matching is CASE-INSENSITIVE: if a requested name (e.g. ``bus_status_target``)
+    is not present but a column with the same name up to case (e.g. the parquet's
+    ``BUS_STATUS``) exists, the real column name is returned so downstream reads
+    hit the actual data instead of silently falling back to ``default_value``.
+    Only when no case-insensitive match exists is the column created and filled
+    with the corresponding default.
     """
     if len(default_value) < len(cols):
         raise ValueError(f"default_value has length {len(default_value)} but cols has length {len(cols)}")
+    lower_map = {c.lower(): c for c in df.columns}
+    resolved = []
     for i, col in enumerate(cols):
-        if col not in df.columns:
+        real = lower_map.get(col.lower())
+        if real is None:
             df[col] = default_value[i]
-    return cols
+            real = col
+        resolved.append(real)
+    return resolved
 #####################
 
 class HeteroGridDatasetDisk(Dataset):
@@ -158,8 +169,11 @@ class HeteroGridDatasetDisk(Dataset):
         ] + common_branch_features
 
         #####################
-        # Optional VLD target column on bus.y
-        vld_bus_target_features = _optional_cols(bus_data,["bus_status_target"],default_value=[1.0])
+        # Optional VLD target column on bus.y.
+        # The parquet stores post-contingency energization as ``BUS_STATUS``
+        # (uppercase). Request it directly; the case-insensitive matcher also
+        # accepts a lowercase ``bus_status_target`` if a future writer uses that.
+        vld_bus_target_features = _optional_cols(bus_data,["BUS_STATUS", "bus_status_target"],default_value=[1.0, 1.0])[:1]
         #####################
 
         # Group by scenario
