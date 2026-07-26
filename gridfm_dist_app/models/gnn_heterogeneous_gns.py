@@ -280,12 +280,30 @@ class GNS_heterogeneous(nn.Module):
                     bus_edge_index,
                     num_bus,
                 )
+                # Reduce gen_temp to a per-generator scalar (the PG output column) WITHOUT collapsing the batch dim.
+                # A bare .squeeze() turns a single generator ([1, 1]) into a 0-d scalar,
+                # Which scatter_add cannot broadcast against the 1-d gen->bus index
+                # Select the PG column and keep dim 0 instead.
+                if gen_temp.dim() > 1:
+                    gen_contrib = gen_temp[:, PG_OUT_GEN]
+                else:
+                    gen_contrib = gen_temp.reshape(-1)
+                agg_bus = scatter_add(
+                    gen_contrib,
+                    gen_to_bus_index,
+                    dim=0,
+                    dim_size=num_bus,
+                )
+
+                """
                 agg_bus = scatter_add(
                     gen_temp.squeeze(),
                     gen_to_bus_index,
                     dim=0,
                     dim_size=num_bus,
                 )
+                """
+
                 output_temp = self.physics_decoder(
                     P_in,
                     Q_in,
