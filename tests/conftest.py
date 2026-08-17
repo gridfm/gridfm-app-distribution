@@ -27,7 +27,6 @@ _CONFIG_PATH = "tests/config/datamodule_test_base_config.yaml"
 
 class _DummyTrainer:
     """Minimal stand-in for a Lightning Trainer used only during test setup."""
-
     is_global_zero = True
     logger = None  # prevents AttributeError in hetero_powergrid_datamodule.setup()
 
