@@ -15,11 +15,8 @@ def execute_and_live_output(cmd) -> None:
 
 
 def _base_config() -> dict:
-    """Download the default config from gridfm-app-distribution and apply
-    common test parameters."""
-    # FIXED: was ".../griffm/gridfm-app-distribution/..." (404). Correct org is gridfm.
-    config_url = (
-        "https://raw.githubusercontent.com/gridfm/gridfm-app-distribution/"
+    """Download the default config from gridfm-app-distribution and apply common test parameters."""
+    config_url = ("https://raw.githubusercontent.com/gridfm/gridfm-app-distribution/"
         "refs/heads/main/scripts/config/default.yaml"
     )
 
