@@ -3,7 +3,7 @@ requires = ["setuptools >= 75.8.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["gridfm_app_dist*", "gridfm_app_dist_datakit*"]
+include = ["gridfm_app_dist*"]
 namespaces = false
 
 [project]
@@ -68,4 +68,3 @@ test = [
 
 [project.scripts]
 gridfm_app_dist = "gridfm_app_dist.__main__:main"
-gridfm_app_dist_datakit = "gridfm_app_dist_datakit.__main__:main"
