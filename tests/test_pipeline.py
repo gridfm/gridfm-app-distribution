@@ -11,9 +11,7 @@ from gridfm_app_dist.__main__ import main
 # -------------------------------------------------
 # Test configurations
 # -------------------------------------------------
-CONFIGS = [
-    "tests/config/datamodule_test_base_config.yaml",
-]
+CONFIGS = ["tests/config/datamodule_test_base_config.yaml"]
 
 DATA_PATH = "tests/data"
 LOG_DIR = "tests/mlruns"

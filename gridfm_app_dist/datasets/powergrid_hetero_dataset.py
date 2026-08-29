@@ -94,12 +94,9 @@ class HeteroGridDatasetDisk(Dataset):
         branch_data = pd.read_parquet(osp.join(self.raw_dir, "branch_data.parquet"))
 
         #####################
-        # Generator data is OPTIONAL. A network may legitimately have no
-        # generators, in which case gen_data.parquet is either missing or
-        # present-but-empty. We load it defensively and flag `has_generators`
-        # so the rest of process() can build a valid *empty* ``gen`` node set
-        # instead of crashing. Tasks/losses/model are unchanged: an empty gen
-        # store is natively supported by PyG HeteroData.
+        # Generator data is OPTIONAL. A network may legitimately have no generators, in which case gen_data.parquet is either missing or present-but-empty.
+        # We load it defensively and flag `has_generators` so the rest of process() can build a valid *empty* ``gen`` node set instead of crashing.
+        # Tasks/losses/model are unchanged: an empty gen store is natively supported by PyG HeteroData.
         gen_path = osp.join(self.raw_dir, "gen_data.parquet")
         if osp.exists(gen_path):
             gen_data = pd.read_parquet(gen_path)
@@ -169,7 +166,6 @@ class HeteroGridDatasetDisk(Dataset):
             "cp2_eur_per_mw2",
             "in_service",
         ]
-
         common_branch_features = ["tap", "ang_min", "ang_max", "rate_a", "br_status"]
 
         #####################
@@ -197,9 +193,6 @@ class HeteroGridDatasetDisk(Dataset):
 
         #####################
         # Optional VLD target column on bus.y.
-        # The parquet stores post-contingency energization as ``BUS_STATUS``
-        # (uppercase). Request it directly; the case-insensitive matcher also
-        # accepts a lowercase ``bus_status_target`` if a future writer uses that.
         vld_bus_target_features = _optional_cols(bus_data,["BUS_STATUS", "bus_status_target"],default_value=[1.0, 1.0])[:1]
         #####################
 
