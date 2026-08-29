@@ -236,6 +236,8 @@ def print_calibration_stats(all_runs, metric_keys, bounds, confidence_interval=0
 #   training.epochs (int), model.hidden_size (int), task.task_name.
 # ----------------------------------------------------------------------------
 VLD_CONFIG_PATH = os.environ.get("GRIDFM_VLD_CONFIG", "scripts/config/default.yaml")
+VLD_DATA_PATH = os.environ.get("GRIDFM_VLD_DATA", "tests/data")
+LOG_PATH = os.environ.get("LOG_PATH", "integrationtests/logs")
 
 def prepare_training_config():
     with open(VLD_CONFIG_PATH, "r") as f:
@@ -287,25 +289,19 @@ def _find_latest(pattern: str) -> str:
 
 def test_train_vld(cleanup_test_artifacts, calibrate_runs, ci_level, calibrate_pad):
     """Integration test for VoltageLossDetection.
-
     Steps:
-      1. (Data expected at data_out/ -- generate via generate_test_data.py or
-         point GRIDFM_VLD_DATA at an existing scenario_33radial dataset.)
+      1. (Data expected at data_out/ -- generate via generate_test_data.py)
       2. Train a short VLD model with the app CLI.
       3. Run predict to produce the predictions parquet.
-      4. Compute status-classification metrics from that parquet and assert
-         they fall within calibrated bounds.
-
-    Pass --calibrate (default 5 runs; --calibrate N for another count) to
-    calibrate bounds instead of asserting.
+      4. Compute status-classification metrics from that parquet and assert they fall within calibrated bounds.
+    Pass --calibrate (default 5 runs; --calibrate N for another count) to calibrate bounds instead of asserting.
     """
     n_runs = max(calibrate_runs, 1)
-    data_dir = os.environ.get("GRIDFM_VLD_DATA", "data_out")
+    data_dir = VLD_DATA_PATH
+    log_dir = LOG_PATH
 
     assert os.path.isdir(data_dir) and os.listdir(data_dir), (
-        f"VLD data dir '{data_dir}' missing/empty. Generate it first:\n"
-        f"    python integrationtests/generate_test_data.py\n"
-        f"or set GRIDFM_VLD_DATA to an existing scenario_33radial dataset."
+        f"VLD data dir '{data_dir}' missing/empty. Generate it first: python integrationtests/generate_test_data.py\n"
     )
 
     training_config_path = prepare_training_config()
@@ -317,10 +313,10 @@ def test_train_vld(cleanup_test_artifacts, calibrate_runs, ci_level, calibrate_p
         execute_and_live_output(
             f"python -m gridfm_app_dist train "
             f"--config {training_config_path} "
-            f"--data_path {data_dir}/ "
+            f"--data_path {data_dir} "
             f"--exp_name exp_vld "
             f"--run_name run{run_i + 1} "
-            f"--log_dir logs"
+            f"--log_dir {log_dir}"
         )
         # 2) PREDICT -> writes <GRID_NAME>_predictions.parquet to --output_path.
         model_ckpt = _find_latest("logs/**/*.ckpt")
