@@ -17,9 +17,9 @@ import pytest
 import torch
 import yaml
 
-from gridfm_dist_app.datasets.hetero_powergrid_datamodule import LitGridHeteroDataModule
-from gridfm_dist_app.datasets.normalizers import HeteroDataMVANormalizer
-from gridfm_dist_app.io.param_handler import NestedNamespace
+from gridfm_app_dist.datasets.hetero_powergrid_datamodule import LitGridHeteroDataModule
+from gridfm_app_dist.datasets.normalizers import HeteroDataMVANormalizer
+from gridfm_app_dist.io.param_handler import NestedNamespace
 
 _STATS_PATH = "tests/data/scenario_33radial/processed/data_stats_HeteroDataMVANormalizer.pt"
 _CONFIG_PATH = "tests/config/datamodule_test_base_config.yaml"

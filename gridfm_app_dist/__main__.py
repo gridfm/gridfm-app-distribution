@@ -2,7 +2,7 @@ import argparse
 import platform
 import warnings
 from datetime import datetime
-from gridfm_dist_app.cli import main_cli, benchmark_cli
+from gridfm_app_dist.cli import main_cli, benchmark_cli
 
 import subprocess
 import os
@@ -91,15 +91,9 @@ def set_env():
 
 
 
-
-
-
-
-
-
 def main():
     parser = argparse.ArgumentParser(
-        prog="gridfm_dist_app",
+        prog="gridfm_app_dist",
         description="gridfm-app-distribution CLI",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -149,7 +143,7 @@ def main():
         "--plugins",
         nargs="*",
         default=[],
-        help="Python packages to import for plugin registration, e.g. gridfm_dist_app_ee",
+        help="Python packages to import for plugin registration, e.g. gridfm_app_dist_ee",
     )
     train_parser.add_argument(
         "--num_workers",
@@ -192,7 +186,7 @@ def main():
         "--plugins",
         nargs="*",
         default=[],
-        help="Python packages to import for plugin registration, e.g. gridfm_dist_app_ee",
+        help="Python packages to import for plugin registration, e.g. gridfm_app_dist_ee",
     )
     finetune_parser.add_argument(
         "--num_workers",
@@ -244,7 +238,7 @@ def main():
         "--plugins",
         nargs="*",
         default=[],
-        help="Python packages to import for plugin registration, e.g. gridfm_dist_app_ee",
+        help="Python packages to import for plugin registration, e.g. gridfm_app_dist_ee",
     )
     evaluate_parser.add_argument(
         "--num_workers",
@@ -293,7 +287,7 @@ def main():
         "--plugins",
         nargs="*",
         default=[],
-        help="Python packages to import for plugin registration, e.g. gridfm_dist_app_ee",
+        help="Python packages to import for plugin registration, e.g. gridfm_app_dist_ee",
     )
     predict_parser.add_argument(
         "--num_workers",

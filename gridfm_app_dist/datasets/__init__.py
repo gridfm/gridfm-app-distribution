@@ -1,8 +1,8 @@
-from gridfm_dist_app.datasets.normalizers import (
+from gridfm_app_dist.datasets.normalizers import (
     HeteroDataMVANormalizer,
     HeteroDataPerSampleMVANormalizer,
 )
-from gridfm_dist_app.datasets.task_transforms import (
+from gridfm_app_dist.datasets.task_transforms import (
     PowerFlowTransforms,
     OptimalPowerFlowTransforms,
     StateEstimationTransforms,

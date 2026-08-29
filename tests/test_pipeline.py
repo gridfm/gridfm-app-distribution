@@ -4,8 +4,8 @@ from unittest import mock
 
 import pytest
 
-from gridfm_dist_app.cli import main_cli
-from gridfm_dist_app.__main__ import main
+from gridfm_app_dist.cli import main_cli
+from gridfm_app_dist.__main__ import main
 
 
 # -------------------------------------------------
@@ -83,10 +83,10 @@ def test_cli_commands(parser, config, command):
 @pytest.mark.parametrize("config", CONFIGS)
 def test_entrypoint_train(config):
     """
-    Test the console entrypoint: python -m gridfm_dist_app train ...
+    Test the console entrypoint: python -m gridfm_app_dist train ...
     """
     test_argv = [
-        "gridfm_dist_app",
+        "gridfm_app_dist",
         "train",
         "--config",
         config,

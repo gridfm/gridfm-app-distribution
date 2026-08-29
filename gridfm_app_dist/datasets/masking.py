@@ -1,6 +1,6 @@
 import torch
 from torch_geometric.transforms import BaseTransform
-from gridfm_dist_app.datasets.globals import (
+from gridfm_app_dist.datasets.globals import (
     # Bus feature indices
     PD_H,
     QD_H,

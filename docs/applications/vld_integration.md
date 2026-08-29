@@ -2,7 +2,7 @@
 
 This document describes the changes made to [`gridfm-graphkit`](https://github.com/gridfm/gridfm-graphkit) to
 integrate the new **Voltage-Loss-Detection (VLD)** task in the new
-(`gridfm_dist_app`) in the `gridfm-app-distribution` package is laid out.
+(`gridfm_app_dist`) in the `gridfm-app-distribution` package is laid out.
 
 ## Task summary 
 The VLD task teaches the heterogeneous GNS to predict, per bus, whether that bus
@@ -122,7 +122,9 @@ interface note below.
 
 The VLD `shared_step` calls the loss **without** `x_dict`
 (`loss_fn(pred, target, edge_index, edge_attr, mask, model=self.model)`), unlike
-the base graphkit 7-argument interface. `MixedLoss.forward` was updated to match,
+the base graphkit 7-argument interface.
+
+`MixedLoss.forward` was updated to match,
 and the carried-over base losses accept `x_dict=None` so they remain callable in
 this 6-argument path.
 
@@ -132,7 +134,7 @@ this 6-argument path.
 
 ```
 gridfm-app-distribution/
-├── gridfm_dist_app/
+├── gridfm_app_dist/
 │   ├── __init__.py            # imports datasets, tasks, models to populate registries
 │   ├── __main__.py
 │   ├── cli.py
@@ -175,7 +177,7 @@ gridfm-app-distribution/
 ```
 
 Every `gridfm_graphkit.*` import in the ported files was rewritten to
-`gridfm_dist_app.*`.
+`gridfm_app_dist.*`.
 
 ## Example configuration
 

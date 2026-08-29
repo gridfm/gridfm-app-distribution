@@ -1,4 +1,4 @@
-from gridfm_dist_app.datasets.normalizers import Normalizer
+from gridfm_app_dist.datasets.normalizers import Normalizer
 
 import os.path as osp
 import os
@@ -8,7 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 from typing import Optional, Callable
 from torch_geometric.data import HeteroData
-from gridfm_dist_app.datasets.globals import VA_H, PG_H
+from gridfm_app_dist.datasets.globals import VA_H, PG_H
 
 #####################
 def _optional_cols(df, cols, default_value):
@@ -61,12 +61,17 @@ class HeteroGridDatasetDisk(Dataset):
     ):
         self.data_normalizer = data_normalizer
         self.length = None
+        self.has_generators = None
 
         super().__init__(root, transform, pre_transform, pre_filter)
 
         load_scenarios_path = osp.join(self.processed_dir, "load_scenarios.pt")
         if osp.exists(load_scenarios_path):
             self.load_scenarios = torch.load(load_scenarios_path, weights_only=True)
+
+        has_gen_path = osp.join(self.processed_dir, "has_generators.pt")
+        if osp.exists(has_gen_path):
+            self.has_generators = bool(torch.load(has_gen_path, weights_only=True).item())
 
     @property
     def raw_file_names(self):
@@ -78,10 +83,7 @@ class HeteroGridDatasetDisk(Dataset):
 
     @property
     def processed_file_names(self):
-        return [
-            "load_scenarios.pt",
-            self.processed_done_file,
-        ]
+        return ["load_scenarios.pt", "has_generators.pt",self.processed_done_file]
 
     def download(self):
         pass
@@ -89,20 +91,45 @@ class HeteroGridDatasetDisk(Dataset):
     def process(self):
         print("LOADING DATA")
         bus_data = pd.read_parquet(osp.join(self.raw_dir, "bus_data.parquet"))
-        gen_data = pd.read_parquet(osp.join(self.raw_dir, "gen_data.parquet"))
         branch_data = pd.read_parquet(osp.join(self.raw_dir, "branch_data.parquet"))
+
+        #####################
+        # Generator data is OPTIONAL. A network may legitimately have no
+        # generators, in which case gen_data.parquet is either missing or
+        # present-but-empty. We load it defensively and flag `has_generators`
+        # so the rest of process() can build a valid *empty* ``gen`` node set
+        # instead of crashing. Tasks/losses/model are unchanged: an empty gen
+        # store is natively supported by PyG HeteroData.
+        gen_path = osp.join(self.raw_dir, "gen_data.parquet")
+        if osp.exists(gen_path):
+            gen_data = pd.read_parquet(gen_path)
+        else:
+            print("gen_data.parquet not found -> treating dataset as generator-free.")
+            gen_data = pd.DataFrame()
+        self.has_generators = not gen_data.empty
+        if not self.has_generators:
+            print("No generators in dataset -> building empty gen node sets.")
+        # Persist the flag so cached runs (which skip process()) can restore it
+        # in __init__ without re-reading the raw parquet.
+        torch.save(torch.tensor(self.has_generators),osp.join(self.processed_dir, "has_generators.pt"))
+        #####################
 
         assert ( bus_data["scenario"].min() == 0 and bus_data["scenario"].max() == len(bus_data["scenario"].unique()) - 1 )
 
         load_scenarios = torch.tensor( bus_data.groupby("scenario", sort=True)["load_scenario_idx"].first().values)
         torch.save(load_scenarios, osp.join(self.processed_dir, "load_scenarios.pt"))
 
-        agg_gen = (
-            gen_data.groupby(["scenario", "bus"])[["min_q_mvar", "max_q_mvar"]]
-            .sum()
-            .reset_index()
-        )
-        bus_data = bus_data.merge(agg_gen, on=["scenario", "bus"], how="left").fillna(0)
+        #####################
+        # Aggregate per-bus reactive-generation limits only when generators
+        # exist. Without generators the bus columns default to 0 (the same
+        # value the left-merge + fillna(0) would have produced).
+        if self.has_generators:
+            agg_gen = (gen_data.groupby(["scenario", "bus"])[["min_q_mvar", "max_q_mvar"]].sum().reset_index())
+            bus_data = bus_data.merge(agg_gen, on=["scenario", "bus"], how="left").fillna(0)
+        else:
+            bus_data["min_q_mvar"] = 0.0
+            bus_data["max_q_mvar"] = 0.0
+        #####################
 
         done_path = osp.join(self.processed_dir, self.processed_done_file)
         if osp.exists(done_path):
@@ -176,23 +203,30 @@ class HeteroGridDatasetDisk(Dataset):
         vld_bus_target_features = _optional_cols(bus_data,["BUS_STATUS", "bus_status_target"],default_value=[1.0, 1.0])[:1]
         #####################
 
+        #####################
+        # Number of generator feature columns, used to shape the empty gen
+        # tensors when the dataset has no generators.
+        n_gen_features = len(gen_features)
+        #####################
+
         # Group by scenario
         bus_groups = bus_data.groupby("scenario")
-        gen_groups = gen_data.groupby("scenario")
+        gen_groups = gen_data.groupby("scenario") if self.has_generators else None
         branch_groups = branch_data.groupby("scenario")
 
         # Process each scenario
-        for scenario in tqdm(
-            bus_data["scenario"].unique(),
-            desc="Processing scenarios",
-        ):
+        for scenario in tqdm(bus_data["scenario"].unique(),desc="Processing scenarios"):
             if osp.exists(osp.join(self.processed_dir, f"data_index_{scenario}.pt")):
                 continue
-            if (
-                scenario not in gen_groups.groups
-                or scenario not in branch_groups.groups
-            ):
-                raise ValueError
+            #####################
+            # Branch data is always required. Generator data is optional: only
+            # require a gen group for this scenario when the dataset actually
+            # has generators.
+            if scenario not in branch_groups.groups:
+                raise ValueError(f"Scenario {scenario} has no branch data.")
+            if self.has_generators and scenario not in gen_groups.groups:
+                raise ValueError(f"Scenario {scenario} has no generator data.")
+            #####################
 
             data = HeteroData()
 
@@ -200,10 +234,45 @@ class HeteroGridDatasetDisk(Dataset):
             bus_df = bus_groups.get_group(scenario)
             data["bus"].x = torch.tensor(bus_df[bus_features].values, dtype=torch.float)
 
-            # Generator nodes
-            gen_df = gen_groups.get_group(scenario).reset_index()
-            data["gen"].x = torch.tensor(gen_df[gen_features].values, dtype=torch.float)
-            gen_df["gen_index"] = gen_df.index  # Use actual index as generator ID
+            #####################
+            # Bus ids in the raw parquet are the network's ORIGINAL labels and
+            # are NOT guaranteed to be contiguous 0..N-1 (e.g. they may range
+            # 10..142 for a 44-bus network). bus.x is built positionally, so
+            # node i corresponds to the i-th row of bus_df. Every edge that
+            # references a bus (branch from_bus/to_bus, gen<->bus) uses these
+            # original labels and must be remapped to the compact node position
+            # 0..N-1, otherwise edge_index points out of bounds and the model's
+            # message passing gather raises a CUDA device-side assert.
+            #
+            # Build the {original_bus_id -> node_position} map from bus_df's row
+            # order, which is the single source of truth for node indexing.
+            bus_id_to_pos = {int(orig_id): pos for pos, orig_id in enumerate(bus_df["bus"].values)}
+
+            def _map_bus_ids(series, ctx):
+                """Vectorized remap of a pandas bus-id Series to node positions.
+                Raises a clear, scenario-tagged error if an id is unknown."""
+                mapped = series.map(bus_id_to_pos)
+                if mapped.isna().any():
+                    missing = sorted(set(series[mapped.isna()].tolist()))
+                    raise ValueError(
+                        f"Scenario {scenario}: {ctx} references bus id(s) "
+                        f"{missing} not present in bus_data (valid ids: "
+                        f"{sorted(bus_id_to_pos)[:5]}... n={len(bus_id_to_pos)})."
+                    )
+                return torch.tensor(mapped.astype("int64").values, dtype=torch.long)
+            #####################
+
+            # Generator nodes (may be empty if the network has no generators)
+            #####################
+            if self.has_generators:
+                gen_df = gen_groups.get_group(scenario).reset_index()
+                data["gen"].x = torch.tensor(gen_df[gen_features].values, dtype=torch.float)
+                gen_df["gen_index"] = gen_df.index  # Use actual index as generator ID
+            else:
+                gen_df = None
+                # Empty gen node feature matrix with the correct feature width.
+                data["gen"].x = torch.zeros((0, n_gen_features), dtype=torch.float)
+            #####################
 
             #####################
             # Additional columns for the VLD task
@@ -213,54 +282,44 @@ class HeteroGridDatasetDisk(Dataset):
             data["bus"].y = torch.cat([bus_y_base, bus_y_vld, bus_y_pg], dim=1)
             #####################
 
-            data["gen"].y = data["gen"].x[:, : (PG_H + 1)].clone()
+            data["gen"].y = data["gen"].x[:, : (PG_H + 1)].clone()  # [0, PG_H+1] when empty
 
             # Bus-Bus edges
             branch_df = branch_groups.get_group(scenario)
-            forward_edges = torch.tensor(
-                branch_df[["from_bus", "to_bus"]].values.T,
-                dtype=torch.long,
-            )
-            forward_edge_attr = torch.tensor(
-                branch_df[forward_branch_features].values,
-                dtype=torch.float,
-            )
-            reverse_edges = torch.tensor(
-                branch_df[["to_bus", "from_bus"]].values.T,
-                dtype=torch.long,
-            )
-            reverse_edge_attr = torch.tensor(
-                branch_df[reverse_branch_features].values,
-                dtype=torch.float,
-            )
+            #####################
+            # Remap branch endpoint ids from original bus labels to node
+            # positions before using them as edge indices.
+            from_pos = _map_bus_ids(branch_df["from_bus"], "branch from_bus")
+            to_pos = _map_bus_ids(branch_df["to_bus"], "branch to_bus")
+            forward_edges = torch.stack([from_pos, to_pos])
+            #####################
+            forward_edge_attr = torch.tensor(branch_df[forward_branch_features].values,dtype=torch.float)
+            reverse_edges = torch.stack([to_pos, from_pos])
+            reverse_edge_attr = torch.tensor(branch_df[reverse_branch_features].values,dtype=torch.float)
 
             edge_index = torch.cat([forward_edges, reverse_edges], dim=1)
             edge_attr = torch.cat([forward_edge_attr, reverse_edge_attr], dim=0)
 
-            forward_targets = torch.tensor(
-                branch_df[["pf", "qf"]].values,
-                dtype=torch.float,
-            )
-            reverse_targets = torch.tensor(
-                branch_df[["pt", "qt"]].values,
-                dtype=torch.float,
-            )
+            forward_targets = torch.tensor(branch_df[["pf", "qf"]].values,dtype=torch.float)
+            reverse_targets = torch.tensor(branch_df[["pt", "qt"]].values,dtype=torch.float)
             edge_y = torch.cat([forward_targets, reverse_targets], dim=0)
 
             data["bus", "connects", "bus"].edge_index = edge_index
             data["bus", "connects", "bus"].edge_attr = edge_attr
             data["bus", "connects", "bus"].y = edge_y
 
-            # Gen-Bus and Bus-Gen edges
-            data["gen", "connected_to", "bus"].edge_index = torch.tensor(
-                gen_df[["gen_index", "bus"]].values.T,
-                dtype=torch.long,
-            )
-            data["bus", "connected_to", "gen"].edge_index = torch.tensor(
-                gen_df[["bus", "gen_index"]].values.T,
-                dtype=torch.long,
-            )
-
+            # Gen-Bus and Bus-Gen edges (empty [2, 0] when there are no gens)
+            #####################
+            if self.has_generators:
+                # Remap the gen 'bus' column (original bus ids) to node positions; gen_index is already 0..Ng-1 from reset_index().
+                gen_bus_pos = _map_bus_ids(gen_df["bus"], "gen bus")
+                gen_idx = torch.tensor(gen_df["gen_index"].astype("int64").values, dtype=torch.long)
+                data["gen", "connected_to", "bus"].edge_index = torch.stack([gen_idx, gen_bus_pos])
+                data["bus", "connected_to", "gen"].edge_index = torch.stack([gen_bus_pos, gen_idx])
+            else:
+                data["gen", "connected_to", "bus"].edge_index = torch.zeros((2, 0), dtype=torch.long)
+                data["bus", "connected_to", "gen"].edge_index = torch.zeros((2, 0), dtype=torch.long)
+            #####################
             data["scenario_id"] = torch.tensor([scenario], dtype=torch.long)
 
             # Save graph
@@ -271,22 +330,12 @@ class HeteroGridDatasetDisk(Dataset):
 
     def len(self):
         if self.length is None:
-            files = [
-                f
-                for f in os.listdir(self.processed_dir)
-                if f.startswith(
-                    "data_index_",
-                )
-                and f.endswith(".pt")
-            ]
+            files = [f for f in os.listdir(self.processed_dir) if f.startswith("data_index_") and f.endswith(".pt")]
             self.length = len(files)
         return self.length
 
     def get(self, idx):
-        file_name = osp.join(
-            self.processed_dir,
-            f"data_index_{idx}.pt",
-        )
+        file_name = osp.join(self.processed_dir, f"data_index_{idx}.pt")
         if not osp.exists(file_name):
             raise IndexError(f"Data file {file_name} does not exist.")
         data_dict = torch.load(file_name, weights_only=True)

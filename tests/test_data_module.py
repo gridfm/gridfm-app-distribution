@@ -1,5 +1,5 @@
-from gridfm_dist_app.datasets.hetero_powergrid_datamodule import LitGridHeteroDataModule
-from gridfm_dist_app.io.param_handler import NestedNamespace
+from gridfm_app_dist.datasets.hetero_powergrid_datamodule import LitGridHeteroDataModule
+from gridfm_app_dist.io.param_handler import NestedNamespace
 import yaml
 import copy
 import pytest

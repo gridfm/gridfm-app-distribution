@@ -1,4 +1,4 @@
-from gridfm_dist_app.datasets.globals import (
+from gridfm_app_dist.datasets.globals import (
     # Bus feature indices
     PD_H,
     QD_H,
@@ -12,9 +12,9 @@ from gridfm_dist_app.datasets.globals import (
     QG_OUT,
 )
 
-from gridfm_dist_app.tasks.reconstruction_tasks import ReconstructionTask
-from gridfm_dist_app.io.registries import TASK_REGISTRY
-from gridfm_dist_app.tasks.utils import (
+from gridfm_app_dist.tasks.reconstruction_tasks import ReconstructionTask
+from gridfm_app_dist.io.registries import TASK_REGISTRY
+from gridfm_app_dist.tasks.utils import (
     plot_correlation_by_node_type,
     plot_residuals_histograms,
     residual_stats_by_type,
@@ -24,7 +24,7 @@ import torch.distributed as dist
 import torch.nn.functional as F
 from torch_scatter import scatter_add
 from torch_geometric.nn import global_mean_pool
-from gridfm_dist_app.models.utils import (
+from gridfm_app_dist.models.utils import (
     ComputeBranchFlow,
     ComputeNodeInjection,
     ComputeNodeResiduals,

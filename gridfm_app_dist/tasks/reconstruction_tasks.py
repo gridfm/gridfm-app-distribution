@@ -1,5 +1,5 @@
-from gridfm_dist_app.io.param_handler import load_model, get_loss_function
-from gridfm_dist_app.tasks.base_task import BaseTask
+from gridfm_app_dist.io.param_handler import load_model, get_loss_function
+from gridfm_app_dist.tasks.base_task import BaseTask
 from pytorch_lightning.utilities import rank_zero_only
 
 

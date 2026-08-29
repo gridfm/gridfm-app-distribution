@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from gridfm_dist_app.__main__ import set_env
+from gridfm_app_dist.__main__ import set_env
 
 
 @pytest.fixture(autouse=True)

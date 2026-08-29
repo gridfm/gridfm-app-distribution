@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from torch import nn
 from torch_scatter import scatter_add, scatter_mean, scatter_max
-from gridfm_dist_app.io.registries import PHYSICS_DECODER_REGISTRY
+from gridfm_app_dist.io.registries import PHYSICS_DECODER_REGISTRY
 
-from gridfm_dist_app.datasets.globals import (
+from gridfm_app_dist.datasets.globals import (
     # Bus feature indices
     PD_H,
     QD_H,

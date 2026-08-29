@@ -1,5 +1,5 @@
-from gridfm_dist_app.training.loss import PBELoss
-from gridfm_dist_app.datasets.globals import PQ_H as PQ, PV_H as PV, REF_H as REF
+from gridfm_app_dist.training.loss import PBELoss
+from gridfm_app_dist.datasets.globals import PQ_H as PQ, PV_H as PV, REF_H as REF
 
 import networkx as nx
 import matplotlib.pyplot as plt

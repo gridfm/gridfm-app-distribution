@@ -4,9 +4,9 @@ import torch.distributed as dist
 import pandas as pd
 from lightning.pytorch.loggers import MLFlowLogger
 
-from gridfm_dist_app.io.registries import TASK_REGISTRY
-from gridfm_dist_app.tasks.reconstruction_tasks import ReconstructionTask
-from gridfm_dist_app.datasets.globals import (
+from gridfm_app_dist.io.registries import TASK_REGISTRY
+from gridfm_app_dist.tasks.reconstruction_tasks import ReconstructionTask
+from gridfm_app_dist.datasets.globals import (
     VM_OUT,
     VM_H,
     BUS_STATUS_TARGET,
@@ -33,7 +33,7 @@ class VoltageLossDetectionTask(ReconstructionTask):
         bus_target = batch.y_dict["bus"]
 
         status_prob = torch.sigmoid(bus_pred[:, BUS_STATUS_LOGIT_OUT])
-        status_pred = (status_prob >= 0.5).float()
+        status_pred = (status_prob >= 0.9).float()
         status_true = bus_target[:, BUS_STATUS_TARGET].float()
 
         vm_pred = bus_pred[:, VM_OUT]
@@ -41,8 +41,8 @@ class VoltageLossDetectionTask(ReconstructionTask):
 
         status_acc = (status_pred == status_true).float().mean()
 
-        off_mask = status_true < 0.5
-        on_mask = status_true >= 0.5
+        off_mask = status_true < 0.9
+        on_mask = status_true >= 0.9
 
         off_vm_mae = (
             vm_pred[off_mask].abs().mean()
@@ -153,6 +153,6 @@ class VoltageLossDetectionTask(ReconstructionTask):
             "bus": local_bus_idx.cpu().numpy(),
             "vm_pred": bus_pred[:, VM_OUT].detach().cpu().numpy(),
             "status_prob": status_prob.detach().cpu().numpy(),
-            "status_pred": (status_prob >= 0.5).float().detach().cpu().numpy(),
+            "status_pred": (status_prob >= 0.9).float().detach().cpu().numpy(),
             "status_true": batch.y_dict["bus"][:, BUS_STATUS_TARGET].detach().cpu().numpy(),
         }

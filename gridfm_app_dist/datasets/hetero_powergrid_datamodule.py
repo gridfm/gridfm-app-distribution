@@ -5,17 +5,17 @@ from torch_geometric.loader import DataLoader
 from torch.utils.data import ConcatDataset
 from torch.utils.data import Subset
 import torch.distributed as dist
-from gridfm_dist_app.io.registries import DATASET_WRAPPER_REGISTRY
-from gridfm_dist_app.io.param_handler import (
+from gridfm_app_dist.io.registries import DATASET_WRAPPER_REGISTRY
+from gridfm_app_dist.io.param_handler import (
     NestedNamespace,
     load_normalizer,
     get_task_transforms,
 )
-from gridfm_dist_app.datasets.utils import (
+from gridfm_app_dist.datasets.utils import (
     split_dataset,
     split_dataset_by_load_scenario_idx,
 )
-from gridfm_dist_app.datasets.powergrid_hetero_dataset import HeteroGridDatasetDisk
+from gridfm_app_dist.datasets.powergrid_hetero_dataset import HeteroGridDatasetDisk
 import numpy as np
 import random
 import warnings
@@ -68,8 +68,8 @@ class LitGridHeteroDataModule(L.LightningDataModule):
 
     Example:
         ```python
-        from gridfm_dist_app.datasets.powergrid_datamodule import LitGridDataModule
-        from gridfm_dist_app.io.param_handler import NestedNamespace
+        from gridfm_app_dist.datasets.powergrid_datamodule import LitGridDataModule
+        from gridfm_app_dist.io.param_handler import NestedNamespace
         import yaml
 
         with open("config/config.yaml") as f:

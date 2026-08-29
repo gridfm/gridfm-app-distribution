@@ -1,11 +1,11 @@
 import torch
 import yaml
-from gridfm_dist_app.datasets.masking import SimulateMeasurements
-from gridfm_dist_app.datasets.normalizers import HeteroDataMVANormalizer
-from gridfm_dist_app.io.param_handler import NestedNamespace
+from gridfm_app_dist.datasets.masking import SimulateMeasurements
+from gridfm_app_dist.datasets.normalizers import HeteroDataMVANormalizer
+from gridfm_app_dist.io.param_handler import NestedNamespace
 from copy import deepcopy
 from torch_geometric.data import HeteroData
-from gridfm_dist_app.datasets.globals import (
+from gridfm_app_dist.datasets.globals import (
     # Bus feature indices
     PD_H,
     QD_H,

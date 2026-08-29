@@ -1,6 +1,6 @@
 import torch
-from gridfm_dist_app.training.loss import MixedLoss
-from gridfm_dist_app.io.registries import (
+from gridfm_app_dist.training.loss import MixedLoss
+from gridfm_app_dist.io.registries import (
     NORMALIZERS_REGISTRY,
     MODELS_REGISTRY,
     LOSS_REGISTRY,
@@ -11,7 +11,7 @@ from gridfm_dist_app.io.registries import (
 
 import argparse
 from torch_geometric.transforms import Compose
-from gridfm_dist_app.tasks.base_task import BaseTask
+from gridfm_app_dist.tasks.base_task import BaseTask
 
 
 class NestedNamespace(argparse.Namespace):

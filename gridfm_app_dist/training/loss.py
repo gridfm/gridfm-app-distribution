@@ -2,11 +2,11 @@ import torch.nn.functional as F
 import torch
 import torch.nn as nn
 from abc import ABC, abstractmethod
-from gridfm_dist_app.io.registries import LOSS_REGISTRY
+from gridfm_app_dist.io.registries import LOSS_REGISTRY
 from torch_scatter import scatter_add
 from torch_geometric.utils import to_torch_coo_tensor
 
-from gridfm_dist_app.datasets.globals import (
+from gridfm_app_dist.datasets.globals import (
     # Bus feature indices
     QG_H,
     VM_H,

@@ -1,7 +1,7 @@
-from gridfm_dist_app.datasets.hetero_powergrid_datamodule import LitGridHeteroDataModule
-from gridfm_dist_app.io.param_handler import NestedNamespace
-from gridfm_dist_app.io.registries import DATASET_WRAPPER_REGISTRY
-from gridfm_dist_app.training.callbacks import SaveBestModelStateDict
+from gridfm_app_dist.datasets.hetero_powergrid_datamodule import LitGridHeteroDataModule
+from gridfm_app_dist.io.param_handler import NestedNamespace
+from gridfm_app_dist.io.registries import DATASET_WRAPPER_REGISTRY
+from gridfm_app_dist.training.callbacks import SaveBestModelStateDict
 import importlib
 import numpy as np
 import os
@@ -10,8 +10,8 @@ import yaml
 import torch
 import pandas as pd
 
-from gridfm_dist_app.io.param_handler import get_task
-from gridfm_dist_app.tasks.compute_ac_dc_metrics import compute_ac_dc_metrics
+from gridfm_app_dist.io.param_handler import get_task
+from gridfm_app_dist.tasks.compute_ac_dc_metrics import compute_ac_dc_metrics
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import MLFlowLogger

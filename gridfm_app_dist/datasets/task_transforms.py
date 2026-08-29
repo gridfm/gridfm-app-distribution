@@ -1,5 +1,5 @@
 from torch_geometric.transforms import Compose
-from gridfm_dist_app.datasets.transforms import (
+from gridfm_app_dist.datasets.transforms import (
     RemoveInactiveBranches,
     RemoveInactiveGenerators,
     ApplyMasking,
@@ -10,7 +10,7 @@ from gridfm_dist_app.datasets.transforms import (
     LoadGridParamsFromPathVLD,
     ###################
 )
-from gridfm_dist_app.datasets.masking import (
+from gridfm_app_dist.datasets.masking import (
     AddOPFHeteroMask,
     AddPFHeteroMask,
     SimulateMeasurements,
@@ -18,7 +18,7 @@ from gridfm_dist_app.datasets.masking import (
     AddVLDHeteroMask,
     ###################
 )
-from gridfm_dist_app.io.registries import TRANSFORM_REGISTRY
+from gridfm_app_dist.io.registries import TRANSFORM_REGISTRY
 
 
 @TRANSFORM_REGISTRY.register("PowerFlow")

@@ -1,1 +1,1 @@
-gridfm_dist_app
+gridfm_app_dist

@@ -54,10 +54,36 @@ def create_admittance_matrix(bus_params, edge_params, sn_mva=100):
 
     base_kv = bus_params["baseKV"].values
 
-    # Extract from-bus and to-bus indices for each branch
+    #####################
+    # Bus ids in the raw tables are the network's ORIGINAL labels and are NOT
+    # guaranteed to be contiguous 0..nb-1 (e.g. they may range 10..142 for a
+    # 44-bus network). base_kv and the sparse admittance columns below are
+    # indexed POSITIONALLY (row i of bus_params == column i), so from_bus/to_bus
+    # must be remapped to node positions first, exactly as in the dataset
+    # process(). If bus_params carries a 'bus' id column we map against it;
+    # otherwise the ids are assumed already positional and the map is the
+    # identity (this branch is a no-op for contiguous 0..nb-1 data).
+    if "bus" in bus_params.columns:
+        bus_id_to_pos = {int(orig_id): pos for pos, orig_id in enumerate(bus_params["bus"].values)}
 
-    f = edge_params["from_bus"].values.astype(np.int32)
-    t = edge_params["to_bus"].values.astype(np.int32)
+        def _map_bus_ids(series, ctx):
+            mapped = series.map(bus_id_to_pos)
+            if mapped.isna().any():
+                missing = sorted(set(series[mapped.isna()].tolist()))
+                raise ValueError(
+                    f"create_admittance_matrix: {ctx} references bus id(s) "
+                    f"{missing} not present in bus_params "
+                    f"(n_bus={len(bus_id_to_pos)})."
+                )
+            return mapped.astype(np.int32).values
+
+        f = _map_bus_ids(edge_params["from_bus"], "from_bus")
+        t = _map_bus_ids(edge_params["to_bus"], "to_bus")
+    else:
+        # No explicit id column: rows are already positional (0..nb-1).
+        f = edge_params["from_bus"].values.astype(np.int32)
+        t = edge_params["to_bus"].values.astype(np.int32)
+    #####################
 
     # Extract branch admittance coefficients
     Yff = edge_params["Yff_r"].values + 1j * edge_params["Yff_i"].values

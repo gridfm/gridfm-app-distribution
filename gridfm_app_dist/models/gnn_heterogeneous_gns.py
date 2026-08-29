@@ -1,16 +1,16 @@
 import torch
 from torch import nn
 from torch_geometric.nn import HeteroConv, TransformerConv
-from gridfm_dist_app.io.registries import MODELS_REGISTRY
-from gridfm_dist_app.io.param_handler import get_physics_decoder
+from gridfm_app_dist.io.registries import MODELS_REGISTRY
+from gridfm_app_dist.io.param_handler import get_physics_decoder
 from torch_scatter import scatter_add
-from gridfm_dist_app.models.utils import (
+from gridfm_app_dist.models.utils import (
     ComputeBranchFlow,
     ComputeNodeInjection,
     ComputeNodeResiduals,
     bound_with_sigmoid,
 )
-from gridfm_dist_app.datasets.globals import (
+from gridfm_app_dist.datasets.globals import (
     # Bus feature indices
     VM_H,
     VA_H,

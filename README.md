@@ -43,7 +43,7 @@ pip install "gridfm-app-distribution[dev,test]"
 Interface to train, fine-tune, evaluate, and run inference on GridFM models of distribution networks using YAML configs and MLflow tracking.
 
 ```
-gridfm_dist_app <command> [OPTIONS]
+gridfm_app_dist <command> [OPTIONS]
 ```
 
 Available commands:
@@ -58,7 +58,7 @@ Available commands:
 ## Training Models
 
 ```
-gridfm_dist_app --config path/to/config.yaml
+gridfm_app_dist --config path/to/config.yaml
 ```
 
 ### Arguments
@@ -86,7 +86,7 @@ gridfm_dist_app --config path/to/config.yaml
 **Standard Training:**
 
 ```
-gridfm_dist_app train --config examples/config/rural_MVLV_test.yaml --data_path examples/data
+gridfm_app_dist train --config examples/config/rural_MVLV_test.yaml --data_path examples/data
 ```
 
 ---
@@ -94,7 +94,7 @@ gridfm_dist_app train --config examples/config/rural_MVLV_test.yaml --data_path 
 ## Fine-Tuning Models
 
 ```
-gridfm_dist_app finetune --config path/to/config.yaml --model_path path/to/model.pt
+gridfm_app_dist finetune --config path/to/config.yaml --model_path path/to/model.pt
 ```
 
 ### Arguments
@@ -124,7 +124,7 @@ gridfm_dist_app finetune --config path/to/config.yaml --model_path path/to/model
 ## Evaluating Models
 
 ```
-gridfm_dist_app evaluate --config path/to/eval.yaml --model_path path/to/model.pt
+gridfm_app_dist evaluate --config path/to/eval.yaml --model_path path/to/model.pt
 ```
 
 ### Arguments
@@ -155,7 +155,7 @@ gridfm_dist_app evaluate --config path/to/eval.yaml --model_path path/to/model.p
 When evaluating a model on a dataset, you can pass the normalizer statistics from the original training run to ensure the same normalization parameters are used:
 
 ```
-gridfm_dist_app evaluate \
+gridfm_app_dist evaluate \
   --config examples/config/HGNS_PF_datakit_case118.yaml \
   --model_path mlruns/<experiment_id>/<run_id>/artifacts/model/best_model_state_dict.pt \
   --normalizer_stats mlruns/<experiment_id>/<run_id>/artifacts/stats/normalizer_stats.pt \
@@ -169,7 +169,7 @@ gridfm_dist_app evaluate \
 ## Running Predictions
 
 ```
-gridfm_dist_app predict --config path/to/config.yaml --model_path path/to/model.pt
+gridfm_app_dist predict --config path/to/config.yaml --model_path path/to/model.pt
 ```
 
 ### Arguments
@@ -199,7 +199,7 @@ gridfm_dist_app predict --config path/to/config.yaml --model_path path/to/model.
 ## Benchmarking Dataloader Throughput
 
 ```
-gridfm_dist_app benchmark --config path/to/config.yaml
+gridfm_app_dist benchmark --config path/to/config.yaml
 ```
 
 ### Arguments
@@ -218,8 +218,8 @@ gridfm_dist_app benchmark --config path/to/config.yaml
 Use built-in help for full command details:
 
 ```
-gridfm_dist_app --help
-gridfm_dist_app <command> --help
+gridfm_app_dist --help
+gridfm_app_dist <command> --help
 ```
 
 ---

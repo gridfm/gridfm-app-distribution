@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch_scatter import scatter_add
 
-from gridfm_dist_app.datasets.globals import (
+from gridfm_app_dist.datasets.globals import (
     # Bus feature indices
     PD_H,
     QD_H,
@@ -23,7 +23,7 @@ from gridfm_dist_app.datasets.globals import (
 
 # NOTE (VLD integration):
 # In gridfm-graphkit, the physics decoders (PhysicsDecoderOPF / PF / SE) are registered in this module.
-# In gridfm-dist-app they have been moved to gridfm_dist_app/tasks/utils.py with the new PhysicsDecoderVLD decoder
+# In gridfm-dist-app they have been moved to gridfm_app_dist/tasks/utils.py with the new PhysicsDecoderVLD decoder
 
 class ComputeBranchFlow(nn.Module):
     """Compute sending-end branch flows (Pf, Qf) for all branches."""

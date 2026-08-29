@@ -1,15 +1,15 @@
 import torch
 import torch.nn.functional as F
-from gridfm_dist_app.datasets.normalizers import HeteroDataMVANormalizer
-from gridfm_dist_app.io.param_handler import NestedNamespace
+from gridfm_app_dist.datasets.normalizers import HeteroDataMVANormalizer
+from gridfm_app_dist.io.param_handler import NestedNamespace
 import yaml
 from torch_scatter import scatter_add
-from gridfm_dist_app.models.utils import (
+from gridfm_app_dist.models.utils import (
     ComputeBranchFlow,
     ComputeNodeInjection,
 )
-from gridfm_dist_app.training.loss import LossPerDim
-from gridfm_dist_app.datasets.globals import (
+from gridfm_app_dist.training.loss import LossPerDim
+from gridfm_app_dist.datasets.globals import (
     VM_H,
     VA_H,
     P_E,
@@ -22,7 +22,7 @@ from gridfm_dist_app.datasets.globals import (
     QG_OUT,
     REF_H,
 )
-from gridfm_dist_app.tasks.utils import PhysicsDecoderSE
+from gridfm_app_dist.tasks.utils import PhysicsDecoderSE
 from torch_geometric.data import HeteroData
 
 

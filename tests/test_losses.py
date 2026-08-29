@@ -2,12 +2,12 @@ import pytest
 import torch
 import yaml
 from torch_geometric.data import HeteroData
-from gridfm_dist_app.datasets.hetero_powergrid_datamodule import LitGridHeteroDataModule
-from gridfm_dist_app.datasets.normalizers import HeteroDataMVANormalizer
-from gridfm_dist_app.io.param_handler import NestedNamespace
-from gridfm_dist_app.datasets.globals import VM_H, VA_H, QG_H, PG_BUS_H
+from gridfm_app_dist.datasets.hetero_powergrid_datamodule import LitGridHeteroDataModule
+from gridfm_app_dist.datasets.normalizers import HeteroDataMVANormalizer
+from gridfm_app_dist.io.param_handler import NestedNamespace
+from gridfm_app_dist.datasets.globals import VM_H, VA_H, QG_H, PG_BUS_H
 from torch_scatter import scatter_add
-from gridfm_dist_app.models.utils import (
+from gridfm_app_dist.models.utils import (
     ComputeBranchFlow,
     ComputeNodeInjection,
     ComputeNodeResiduals,

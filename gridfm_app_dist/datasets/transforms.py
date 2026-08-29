@@ -2,7 +2,7 @@ from copy import deepcopy
 import torch
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.data import HeteroData
-from gridfm_dist_app.datasets.globals import (
+from gridfm_app_dist.datasets.globals import (
     # Generator feature indices
     G_ON,
 
@@ -13,7 +13,7 @@ from gridfm_dist_app.datasets.globals import (
     YFT_TF_I,
     YFT_TF_R,
 )
-from gridfm_dist_app.datasets.normalizers import HeteroDataMVANormalizer
+from gridfm_app_dist.datasets.normalizers import HeteroDataMVANormalizer
 
 
 class RemoveInactiveGenerators(BaseTransform):

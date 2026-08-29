@@ -1,4 +1,4 @@
-from gridfm_dist_app.io.registries import NORMALIZERS_REGISTRY
+from gridfm_app_dist.io.registries import NORMALIZERS_REGISTRY
 import os
 import torch
 from abc import ABC, abstractmethod
@@ -6,7 +6,7 @@ from typing import List
 import pandas as pd
 import numpy as np
 from torch_geometric.data import HeteroData
-from gridfm_dist_app.datasets.globals import (
+from gridfm_app_dist.datasets.globals import (
     # Bus feature indices
     PD_H,
     QD_H,
@@ -146,30 +146,38 @@ class HeteroDataMVANormalizer(Normalizer):
             Dictionary of computed parameters.
         """
         bus_data = pd.read_parquet(os.path.join(data_path, "bus_data.parquet"))
-        gen_data = pd.read_parquet(os.path.join(data_path, "gen_data.parquet"))
 
-        assert (
-            bus_data.scenario.min() == 0
-            and bus_data.scenario.max() == len(bus_data.scenario.unique()) - 1
-        )
+        # Generator data is OPTIONAL (see HeteroGridDatasetDisk). Load it defensively:
+        # A missing or empty gen_data.parquet means the network has no generators,
+        # in which case p_mw simply does not contribute to the baseMVA percentile (bus Pd/Qd/Qg still define the power scale).
+        gen_path = os.path.join(data_path, "gen_data.parquet")
+        if os.path.exists(gen_path):
+            gen_data = pd.read_parquet(gen_path)
+        else:
+            gen_data = pd.DataFrame()
+        has_generators = not gen_data.empty
+
+        assert (bus_data.scenario.min() == 0 and bus_data.scenario.max() == len(bus_data.scenario.unique()) - 1)
 
         bus_data = bus_data[bus_data["scenario"].isin(scenario_ids)]
-        gen_data = gen_data[gen_data["scenario"].isin(scenario_ids)]
+        if has_generators:
+            gen_data = gen_data[gen_data["scenario"].isin(scenario_ids)]
 
         if self.baseMVA is None:
             pd_values = bus_data["Pd"]
             qd_values = bus_data["Qd"]
-            pg_values = gen_data["p_mw"]
             qg_values = bus_data["Qg"]
 
-            non_zero_values = pd.concat(
-                [
-                    pd_values[pd_values != 0],
-                    qd_values[qd_values != 0],
-                    pg_values[pg_values != 0],
-                    qg_values[qg_values != 0],
-                ],
-            )
+            # Only include generator active power when generators exist.
+            values_to_concat = [
+                pd_values[pd_values != 0],
+                qd_values[qd_values != 0],
+                qg_values[qg_values != 0],
+            ]
+            if has_generators:
+                pg_values = gen_data["p_mw"]
+                values_to_concat.append(pg_values[pg_values != 0])
+            non_zero_values = pd.concat(values_to_concat)
 
             self.baseMVA = np.percentile(non_zero_values, 95)
         self.vn_kv_max = float(bus_data["vn_kv"].max())
@@ -379,28 +387,43 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
             Dictionary of computed parameters.
         """
         bus_data = pd.read_parquet(os.path.join(data_path, "bus_data.parquet"))
-        gen_data = pd.read_parquet(os.path.join(data_path, "gen_data.parquet"))
+        #####################
+        # Generator data is OPTIONAL. Load defensively; a missing/empty file
+        # means the dataset is generator-free and p_mw is omitted from the
+        # per-scenario baseMVA percentile.
+        gen_path = os.path.join(data_path, "gen_data.parquet")
+        if os.path.exists(gen_path):
+            gen_data = pd.read_parquet(gen_path)
+        else:
+            gen_data = pd.DataFrame()
+        has_generators = not gen_data.empty
+        #####################
 
         bus_data = bus_data[bus_data["scenario"].isin(scenario_ids)]
-        gen_data = gen_data[gen_data["scenario"].isin(scenario_ids)]
+        if has_generators:
+            gen_data = gen_data[gen_data["scenario"].isin(scenario_ids)]
 
         baseMVA = []
         vn_kv_max = []
         scenarios = []
 
         bus_groups = bus_data.groupby("scenario")
-        gen_groups = gen_data.groupby("scenario")
+        gen_groups = gen_data.groupby("scenario") if has_generators else None
 
         for scenario in sorted(bus_groups.groups.keys()):
             bus_group = bus_groups.get_group(scenario)
-            gen_group = gen_groups.get_group(scenario)
             pd_values = bus_group["Pd"]
             qd_values = bus_group["Qd"]
             qg_values = bus_group["Qg"]
-            pg_values = gen_group["p_mw"]
 
-            all_values = pd.concat([pd_values, qd_values, pg_values, qg_values])
+            #####################
+            # Include generator active power only when the scenario has gens.
+            values = [pd_values, qd_values, qg_values]
+            if has_generators and scenario in gen_groups.groups:
+                values.append(gen_groups.get_group(scenario)["p_mw"])
+            all_values = pd.concat(values)
             non_zero_values = all_values[all_values != 0]
+            #####################
             baseMVA.append(np.percentile(non_zero_values, 95))
             vn_kv_max.append(float(bus_group["vn_kv"].max()))
             scenarios.append(scenario)

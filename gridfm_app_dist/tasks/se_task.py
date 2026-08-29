@@ -1,4 +1,4 @@
-from gridfm_dist_app.datasets.globals import (
+from gridfm_app_dist.datasets.globals import (
     # Bus feature indices
     PD_H,
     QG_H,
@@ -14,9 +14,9 @@ from gridfm_dist_app.datasets.globals import (
     PG_H,
 )
 
-from gridfm_dist_app.tasks.reconstruction_tasks import ReconstructionTask
-from gridfm_dist_app.io.registries import TASK_REGISTRY
-from gridfm_dist_app.tasks.utils import plot_correlation_by_node_type
+from gridfm_app_dist.tasks.reconstruction_tasks import ReconstructionTask
+from gridfm_app_dist.io.registries import TASK_REGISTRY
+from gridfm_app_dist.tasks.utils import plot_correlation_by_node_type
 from pytorch_lightning.utilities import rank_zero_only
 import torch
 from torch_scatter import scatter_add

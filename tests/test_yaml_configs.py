@@ -1,7 +1,7 @@
 import yaml
 import glob
 import pytest
-from gridfm_dist_app.io.param_handler import (
+from gridfm_app_dist.io.param_handler import (
     load_normalizer,
     get_loss_function,
     load_model,
