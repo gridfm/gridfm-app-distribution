@@ -9,12 +9,9 @@ def execute_and_live_output(cmd) -> None:
 
 def _base_config() -> dict:
     """
-    Download the default config from gridfm-datakit and apply common test parameters.
+    Download the default config from gridfm-app-distribution and apply common test parameters.
     """
-    config_url = (
-        "https://raw.githubusercontent.com/gridfm/gridfm-datakit/refs/heads/main"
-        "/scripts/config/default.yaml"
-    )
+    config_url = ("https://raw.githubusercontent.com/griffm/gridfm-app-distribution/refs/heads/main/scripts/config/default.yaml")
 
     print(f"Downloading config from {config_url}...")
     with urllib.request.urlopen(config_url) as response:
@@ -29,9 +26,7 @@ def _base_config() -> dict:
     return config
 
 
-def generate_pf_test_data(
-    config_path: str = "integrationtests/default_pf.yaml",
-) -> None:
+def generate_pf_test_data(config_path: str = "integrationtests/default_pf.yaml") -> None:
     """
     Generate power-flow (PF) test data for case14_ieee with 10 000 scenarios
     and 2 topology variants.
@@ -44,16 +39,12 @@ def generate_pf_test_data(
     print(f"PF config written to {config_path}")
     print(f"  network.name                          : {config['network']['name']}")
     print(f"  load.scenarios                        : {config['load']['scenarios']}")
-    print(
-        f"  topology_perturbation.n_topology_variants: {config['topology_perturbation']['n_topology_variants']}",
-    )
+    print(f"  topology_perturbation.n_topology_variants: {config['topology_perturbation']['n_topology_variants']}")
 
     execute_and_live_output(f"gridfm_datakit generate {config_path}")
 
 
-def generate_opf_test_data(
-    config_path: str = "integrationtests/default_opf.yaml",
-) -> None:
+def generate_opf_test_data(config_path: str = "integrationtests/default_opf.yaml") -> None:
     """
     Generate optimal power-flow (OPF) test data for case14_ieee with 10 000 scenarios
     and 2 topology variants.
@@ -67,9 +58,7 @@ def generate_opf_test_data(
     print(f"OPF config written to {config_path}")
     print(f"  network.name                          : {config['network']['name']}")
     print(f"  load.scenarios                        : {config['load']['scenarios']}")
-    print(
-        f"  topology_perturbation.n_topology_variants: {config['topology_perturbation']['n_topology_variants']}",
-    )
+    print(f"  topology_perturbation.n_topology_variants: {config['topology_perturbation']['n_topology_variants']}")
     print(f"  settings.mode                         : {config['settings']['mode']}")
 
     execute_and_live_output(f"gridfm_datakit generate {config_path}")
