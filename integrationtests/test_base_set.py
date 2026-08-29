@@ -160,7 +160,6 @@ def execute_and_live_output(cmd) -> None:
     env.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     subprocess.run(cmd, text=True, shell=True, check=True, env=env)
 
-
 # ----------------------------------------------------------------------------
 # VLD metric computation FROM THE PREDICTIONS PARQUET (the key rewrite)
 # ----------------------------------------------------------------------------
