@@ -3,14 +3,14 @@ requires = ["setuptools >= 75.8.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["gridfm_app_dist*"]
+include = ["gridfm_app_dist*", "gridfm_app_dist_datakit*"]
 namespaces = false
 
 [project]
 name = "gridfm-app-distribution"
 description = "Grid Foundation Model for electricity distribution use cases"
 version = "0.8.1"
-readme = "README.md"
+readme = "README.md"ss
 license = "Apache-2.0"
 requires-python = ">=3.10,<3.14"
 
@@ -68,3 +68,4 @@ test = [
 
 [project.scripts]
 gridfm_app_dist = "gridfm_app_dist.__main__:main"
+gridfm_app_dist_datakit = "gridfm_app_dist_datakit.__main__:main"

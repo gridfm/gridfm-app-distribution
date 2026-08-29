@@ -1,3 +1,20 @@
+"""VLD integration test for gridfm-app-distribution.
+
+Adapted from the original gridfm-graphkit PF/OPF integration harness.
+The calibration machinery (compute_bounds / write_baseline / read_baseline / environment fingerprinting / --calibrate,--ci,--pad) is TASK-AGNOSTIC and is kept verbatim;
+The following changes are made to the measurements:
+
+  * Single task: VoltageLossDetection (VLD), replacing PF + OPF.
+  * CLI is `python -m gridfm_app_dist ... the old `--mp_context` / `--deterministic` flags do NOT exist here.
+  * Metrics are computed FROM THE PREDICTIONS PARQUET the app writes (`<grid>_predictions.parquet` with columns scenario, bus, vm_pred, status_prob, status_pred, status_true)
+  * Config is the app's own scripts/config/default.yaml (task_name: VoltageLossDetection);
+  we shrink training.epochs and model.hidden_size for a fast run -- both keys verified to exist in that config.
+
+Vm error is NOT asserted here: the `predict` output parquet carries status_true but no vm_true (see vld_task.predict_step),
+so only status classification metrics are computable from the parquet.
+If you want Vm error too, use the`evaluate` path (test_step logs OFF Vm MAE / ON Vm RMSE via MLflow) instead.
+"""
+
 import pytest
 import subprocess
 import os
@@ -9,19 +26,15 @@ import importlib.metadata as importlib_metadata
 import pandas as pd
 import yaml
 import shutil
-import zipfile
-import gdown
-import tempfile
 import numpy as np
 from scipy import stats
+from sklearn.metrics import f1_score, precision_score, recall_score
 
 
+# ----------------------------------------------------------------------------
+# Environment fingerprint (only the package list is app-specific)
+# ----------------------------------------------------------------------------
 def _cpu_model() -> str:
-    """Best-effort CPU model string.
-
-    Linux: /proc/cpuinfo (platform.processor() is usually empty).
-    macOS: sysctl machdep.cpu.brand_string (platform.processor() is just "arm").
-    """
     try:
         with open("/proc/cpuinfo") as f:
             for line in f:
@@ -31,23 +44,13 @@ def _cpu_model() -> str:
         pass
     if platform.system() == "Darwin":
         try:
-            return subprocess.check_output(
-                ["sysctl", "-n", "machdep.cpu.brand_string"],
-                text=True,
-            ).strip()
+            return subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], text=True).strip()
         except (OSError, subprocess.CalledProcessError):
             pass
     return platform.processor() or platform.machine()
 
 
 def environment_fingerprint() -> dict:
-    """
-    Capture the full hardware + software stack that can shift training numerics.
-
-    Calibrated metric bounds are only valid for the environment they were
-    measured in; this fingerprint lets the assertion run detect (and warn about)
-    a mismatched baseline. See compute_bounds / read_baseline.
-    """
     fp = {
         "hostname": platform.node(),
         "platform": platform.platform(),
@@ -56,7 +59,7 @@ def environment_fingerprint() -> dict:
         "cuda": None,
         "cudnn": None,
     }
-    for pkg in ("torch", "numpy", "scipy", "gridfm_graphkit", "gridfm_datakit"):
+    for pkg in ("torch", "numpy", "scipy", "gridfm_app_dist", "gridfm_datakit"):
         try:
             fp[f"{pkg}_version"] = importlib_metadata.version(pkg.replace("_", "-"))
         except importlib_metadata.PackageNotFoundError:
@@ -68,63 +71,38 @@ def environment_fingerprint() -> dict:
         if torch.backends.cudnn.is_available():
             fp["cudnn"] = torch.backends.cudnn.version()
         if torch.cuda.is_available():
-            fp["gpus"] = [
-                torch.cuda.get_device_name(i)
-                for i in range(torch.cuda.device_count())
-            ]
+            fp["gpus"] = [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]
     except Exception:
         pass
     return fp
 
 
 def warn_on_fingerprint_mismatch(saved: dict, current: dict) -> None:
-    """Emit a loud warning listing every field that differs (warn-and-proceed)."""
     if not saved:
-        warnings.warn(
-            "Calibration baseline has no environment fingerprint; cannot verify "
-            "it was calibrated on this machine.",
-            stacklevel=2,
-        )
+        warnings.warn("Calibration baseline has no environment fingerprint; cannot verify it was calibrated on this machine.", stacklevel=2)
         return
     diffs = []
     for key in sorted(set(saved) | set(current)):
         if saved.get(key) != current.get(key):
-            diffs.append(f"    {key}: baseline={saved.get(key)!r}  current={current.get(key)!r}")
+            diffs.append(f"{key}: baseline={saved.get(key)!r}  current={current.get(key)!r}")
     if diffs:
         warnings.warn(
-            "Calibration baseline was measured in a DIFFERENT environment; "
-            "metric bounds may not hold here. Re-run `pytest integrationtests --calibrate` "
-            "(or `--calibrate N`) on the unchanged code to "
-            "recalibrate on this machine before making changes. Differing fields:\n" + "\n".join(diffs),
+            "Calibration baseline was measured in a DIFFERENT environment; metric bounds may not hold here. "
+            "Re-run `pytest integrationtests --calibrate` on the unchanged code to recalibrate on this machine before making changes. "
+            "Differing fields:\n" + "\n".join(diffs),
             stacklevel=2,
         )
 
 
-# Machine-specific calibrated metric bounds are written/read here. The bounds
-# depend on hardware, CUDA/cuDNN and library versions, so this file is NOT
-# committed -- each machine calibrates its own baseline before asserting.
-# Override the location with the GRIDFM_CALIBRATION_BASELINE env var.
-DEFAULT_BASELINE_PATH = os.path.join(
-    os.path.dirname(__file__), "calibration_baseline.json"
-)
-
-
+# ----------------------------------------------------------------------------
+# Calibration baseline I/O
+# ----------------------------------------------------------------------------
+DEFAULT_BASELINE_PATH = os.path.join(os.path.dirname(__file__), "calibration_baseline.json")
 def baseline_path() -> str:
     return os.environ.get("GRIDFM_CALIBRATION_BASELINE", DEFAULT_BASELINE_PATH)
 
 
-def compute_bounds(
-    all_runs: list, metric_keys: list, confidence_interval: float, pad: float
-) -> dict:
-    """
-    Compute per-metric (lo, hi) bounds from calibration runs.
-
-    lo/hi = mean +/- max(student-t margin of error, pad * |mean|)
-
-    The ``pad`` floor keeps the interval from collapsing to zero width when the
-    std across same-machine deterministic runs is (near) zero, while metrics
-    whose mean is exactly 0 (hard physical constraints) stay exactly (0, 0).
-    """
+def compute_bounds(all_runs, metric_keys, confidence_interval, pad) -> dict:
     n = len(all_runs)
     alpha_half = (1 + confidence_interval) / 2
     t_crit = stats.t.ppf(alpha_half, df=max(n - 1, 1))
@@ -136,22 +114,13 @@ def compute_bounds(
         arr = np.array(values, dtype=float)
         mean = float(np.mean(arr))
         std = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
-        me = t_crit * std / np.sqrt(len(arr))  # student-t margin of error
+        me = t_crit * std / np.sqrt(len(arr))
         half_width = max(me, pad * abs(mean))
         bounds[key] = (mean - half_width, mean + half_width)
     return bounds
 
 
 def write_baseline(test_key: str, bounds: dict) -> None:
-    """Merge this test's calibrated bounds into the baseline JSON on disk.
-
-    Each test's bounds are stamped with the environment fingerprint they were
-    calibrated in, stored *per test* under ``fingerprints[test_key]``. This is
-    deliberately not a single shared fingerprint: calibrating only PF (or only
-    OPF) must not re-stamp the other test's bounds as if they were measured in
-    this environment. Only the current ``test_key`` is touched; other tests'
-    bounds and fingerprints are left exactly as they were.
-    """
     path = baseline_path()
     data = {}
     if os.path.exists(path):
@@ -159,8 +128,6 @@ def write_baseline(test_key: str, bounds: dict) -> None:
             data = json.load(f)
     data.setdefault("bounds", {})
     data.setdefault("fingerprints", {})
-    # Drop the legacy single shared fingerprint if present; it is superseded by
-    # the per-test map and keeping it would misattribute other tests' bounds.
     data.pop("fingerprint", None)
     data["bounds"][test_key] = {k: list(v) for k, v in bounds.items()}
     data["fingerprints"][test_key] = environment_fingerprint()
@@ -170,15 +137,10 @@ def write_baseline(test_key: str, bounds: dict) -> None:
 
 
 def read_baseline(test_key: str) -> dict:
-    """Load this test's calibrated bounds, or fail with a calibration hint.
-
-    Warns (but proceeds) if the baseline's environment fingerprint differs from
-    the current machine's.
-    """
     path = baseline_path()
     assert os.path.exists(path), (
         f"No calibration baseline at {path}. Bounds are machine-specific -- "
-        f"calibrate on THIS machine first **before** making changes to the code, e.g.:\n"
+        f"calibrate on THIS machine first BEFORE making changes, e.g.:\n"
         f"    pytest integrationtests --calibrate -s"
     )
     with open(path, "r") as f:
@@ -186,10 +148,8 @@ def read_baseline(test_key: str) -> dict:
     bounds = data.get("bounds", {})
     assert test_key in bounds, (
         f"Baseline {path} has no entry for '{test_key}'. Re-run calibration on "
-        f"this machine **before** making changes to the code: pytest integrationtests --calibrate -s"
+        f"this machine BEFORE making changes: pytest integrationtests --calibrate -s"
     )
-    # Prefer this test's own fingerprint; fall back to the legacy shared one so
-    # baselines written before per-test fingerprints still verify.
     saved_fp = data.get("fingerprints", {}).get(test_key, data.get("fingerprint", {}))
     warn_on_fingerprint_mismatch(saved_fp, environment_fingerprint())
     return {k: tuple(v) for k, v in bounds[test_key].items()}
@@ -201,45 +161,59 @@ def execute_and_live_output(cmd) -> None:
     subprocess.run(cmd, text=True, shell=True, check=True, env=env)
 
 
-def collect_metrics_from_log(log_base: str, metric_keys: list) -> dict:
-    """Find the latest run's metrics CSV and return a dict of {metric: value}."""
-    exp_dirs = glob.glob(os.path.join(log_base, "*"))
-    assert len(exp_dirs) > 0, f"No experiment directories found in {log_base}/"
-    latest_exp_dir = sorted(exp_dirs, key=os.path.getctime)[-1]
-    run_dirs = glob.glob(os.path.join(latest_exp_dir, "*"))
-    assert len(run_dirs) > 0, f"No run directories found in {latest_exp_dir}"
-    latest_run_dir = max(run_dirs, key=os.path.getmtime)
-    metrics_file = os.path.join(latest_run_dir, "artifacts", "test", "case14_ieee_metrics.csv")
-    assert os.path.exists(metrics_file), f"Metrics file not found: {metrics_file}"
-    df = pd.read_csv(metrics_file)
-    return dict(zip(df["Metric"], df["Value"].astype(float)))
+# ----------------------------------------------------------------------------
+# VLD metric computation FROM THE PREDICTIONS PARQUET (the key rewrite)
+# ----------------------------------------------------------------------------
+GRID_NAME = "scenario_33radial"
+
+# Metrics computed from status_pred / status_true columns of the predictions
+# parquet. These are the self-contained VLD signal. (Vm error is not here
+# because the predict parquet has no vm_true column -- see module docstring.)
+VLD_METRIC_KEYS = [
+    "status_accuracy",
+    "status_f1",
+    "status_precision",
+    "status_recall",
+]
 
 
-def print_calibration_stats(
-    all_runs: list, metric_keys: list, bounds: dict, confidence_interval: float = 0.995
-) -> None:
+def collect_metrics_from_parquet(output_dir: str) -> dict:
+    """Compute VLD status-classification metrics from the predictions parquet.
+
+    Replaces the old `collect_metrics_from_log` (which read a
+    case14_ieee_metrics.csv this app never writes). Reads
+    `<output_dir>/<GRID_NAME>_predictions.parquet` produced by the app's
+    predict/save_output path.
     """
-    Print per-metric stats across calibration runs:
-      - mean and std with Bessel's correction (ddof=1)
-      - the calibrated (lo, hi) bounds as computed by ``compute_bounds``
+    parquet_path = os.path.join(output_dir, f"{GRID_NAME}_predictions.parquet")
+    assert os.path.exists(parquet_path), (
+        f"Predictions parquet not found: {parquet_path}. Did the predict step "
+        f"run with --output_path {output_dir}?"
+    )
+    df = pd.read_parquet(parquet_path)
+    for col in ("status_pred", "status_true"):
+        assert col in df.columns, f"'{col}' missing from {parquet_path}"
 
-    The lo/hi columns are the SAME bounds that get written to the baseline and
-    asserted against -- they are not recomputed here. This keeps the printed
-    interval coherent with the enforced one (in particular it reflects the
-    ``--pad`` floor, so deterministic near-zero-std runs still show a non-zero
-    width instead of a collapsed ``lo == hi == mean``).
+    y_true = df["status_true"].to_numpy().astype(int)
+    y_pred = df["status_pred"].to_numpy().astype(int)
 
-    Args:
-        all_runs: list of per-run metric dicts
-        metric_keys: list of metric names to report
-        bounds: {metric: (lo, hi)} as returned by ``compute_bounds``
-        confidence_interval: confidence level used to compute ``bounds`` (for
-            display in the header only).
-    """
+    return {
+        "status_accuracy": float((y_true == y_pred).mean()),
+        # zero_division=0 keeps a degenerate all-one-class fold from raising.
+        "status_f1": float(f1_score(y_true, y_pred, zero_division=0)),
+        "status_precision": float(precision_score(y_true, y_pred, zero_division=0)),
+        "status_recall": float(recall_score(y_true, y_pred, zero_division=0)),
+    }
+
+
+def print_calibration_stats(all_runs, metric_keys, bounds, confidence_interval=0.995):
     n = len(all_runs)
     ci_pct = f"{confidence_interval * 100:g}"
     col_w = max(len(k) for k in metric_keys) + 2
-    header = f"  {'Metric':<{col_w}}  {'Mean':>10}  {'Std(ddof=1)':>12}  {f'Bound {ci_pct}% lo':>12}  {f'Bound {ci_pct}% hi':>12}"
+    header = (
+        f"  {'Metric':<{col_w}}  {'Mean':>10}  {'Std(ddof=1)':>12}  "
+        f"{f'Bound {ci_pct}% lo':>12}  {f'Bound {ci_pct}% hi':>12}"
+    )
     print(f"\n===== Calibration Results (n={n}, CI={confidence_interval}) =====")
     print(header)
     print("  " + "-" * (len(header) - 2))
@@ -252,307 +226,159 @@ def print_calibration_stats(
         mean = float(np.mean(arr))
         std = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
         lo, hi = bounds[key]
-        print(
-            f"  {key:<{col_w}}  {mean:>10.4f}  {std:>12.4f}  {lo:>12.4f}  {hi:>12.4f}"
-        )
+        print(f"  {key:<{col_w}}  {mean:>10.4f}  {std:>12.4f}  {lo:>12.4f}  {hi:>12.4f}")
     print("=" * (len(header)) + "\n")
 
 
+# ----------------------------------------------------------------------------
+# Config preparation: shrink epochs + hidden_size for a fast run.
+# Keys verified against scripts/config/default.yaml:
+#   training.epochs (int), model.hidden_size (int), task.task_name.
+# ----------------------------------------------------------------------------
+VLD_CONFIG_PATH = os.environ.get("GRIDFM_VLD_CONFIG", "scripts/config/default.yaml")
+
 def prepare_training_config():
-    """
-    Modify the PF training config to set epochs to 20 and hidden_size to 12 for testing.
-    """
-    config_path = "examples/config/HGNS_PF_datakit_case14.yaml"
-
-    with open(config_path, "r") as f:
+    with open(VLD_CONFIG_PATH, "r") as f:
         config = yaml.safe_load(f)
 
-    if "training" not in config:
-        config["training"] = {}
-    if "model" not in config:
-        config["model"] = {}
+    # Fail loudly if the expected keys are absent -- editing a missing key would silently train a full-size model and invalidate the fast test.
+    assert "training" in config and "epochs" in config["training"], (
+        f"{VLD_CONFIG_PATH}: expected key training.epochs not found"
+    )
+    assert "model" in config and "hidden_size" in config["model"], (
+        f"{VLD_CONFIG_PATH}: expected key model.hidden_size not found"
+    )
+    assert config.get("task", {}).get("task_name") == "VoltageLossDetection", (
+        f"{VLD_CONFIG_PATH}: task.task_name must be VoltageLossDetection"
+    )
 
     config["training"]["epochs"] = 20
     config["model"]["hidden_size"] = 12
 
-    with open(config_path, "w") as f:
+    with open(VLD_CONFIG_PATH, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
-    print(f"Training config updated: epochs set to {config['training']['epochs']}, hidden_size set to {config['model']['hidden_size']}")
-
-    return config_path
-
-
-def prepare_opf_training_config():
-    """
-    Modify the OPF training config to set epochs to 20 and hidden_size to 12 for testing.
-    """
-    config_path = "examples/config/HGNS_OPF_datakit_case14.yaml"
-
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-
-    if "training" not in config:
-        config["training"] = {}
-    if "model" not in config:
-        config["model"] = {}
-
-    config["training"]["epochs"] = 20
-    config["model"]["hidden_size"] = 12
-
-    with open(config_path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-
-    print(f"OPF training config updated: epochs set to {config['training']['epochs']}, hidden_size set to {config['model']['hidden_size']}")
-
-    return config_path
+    print(f"VLD training config updated: epochs=20, hidden_size=12 ({VLD_CONFIG_PATH})")
+    return VLD_CONFIG_PATH
 
 
 @pytest.fixture
 def cleanup_test_artifacts():
-    """
-    Backup modified files and remove generated artifacts after the test.
-    """
-    training_config = " "
-    backup_config = training_config + ".bak"
-
-    if os.path.exists(training_config):
-        shutil.copy2(training_config, backup_config)
+    """Back up the edited config and remove generated artifacts afterwards."""
+    backup_config = VLD_CONFIG_PATH + ".bak"
+    if os.path.exists(VLD_CONFIG_PATH):
+        shutil.copy2(VLD_CONFIG_PATH, backup_config)
 
     yield
 
-    # Restore training config
     if os.path.exists(backup_config):
-        shutil.move(backup_config, training_config)
+        shutil.move(backup_config, VLD_CONFIG_PATH)
 
-    # Remove downloaded config
-    config_file = "integrationtests/default.yaml"
-    if os.path.exists(config_file):
-        os.remove(config_file)
-
-    # Remove generated directories
-    for d in ["data_out", "logs"]:
+    for d in ["logs", "predict_out"]:
         if os.path.exists(d):
             shutil.rmtree(d, ignore_errors=True)
 
 
-def test_train_pf(cleanup_test_artifacts, calibrate_runs, ci_level, calibrate_pad):
-    """
-    Integration test for power flow (PF): gridfm-datakit data generation and gridfm-graphkit training.
+def _find_latest(pattern: str) -> str:
+    hits = glob.glob(pattern)
+    assert hits, f"No file matched {pattern}"
+    return max(hits, key=os.path.getmtime)
+
+
+def test_train_vld(cleanup_test_artifacts, calibrate_runs, ci_level, calibrate_pad):
+    """Integration test for VoltageLossDetection.
 
     Steps:
-    1. Generate power flow grid data using gridfm-datakit
-    2. Train a PF model using gridfm-graphkit
-    3. Validate the PBE Mean metric
+      1. (Data expected at data_out/ -- generate via generate_test_data.py or
+         point GRIDFM_VLD_DATA at an existing scenario_33radial dataset.)
+      2. Train a short VLD model with the app CLI.
+      3. Run predict to produce the predictions parquet.
+      4. Compute status-classification metrics from that parquet and assert
+         they fall within calibrated bounds.
 
-    Pass --calibrate to pytest (defaults to 5 runs; use --calibrate N for another
-    count) to run multiple training passes and print metric stats without
-    asserting range bounds.
+    Pass --calibrate (default 5 runs; --calibrate N for another count) to
+    calibrate bounds instead of asserting.
     """
-
     n_runs = max(calibrate_runs, 1)
-    pf_metric_keys = ["PBE Mean"]
+    data_dir = os.environ.get("GRIDFM_VLD_DATA", "data_out")
 
-    data_dir = "data_out"
-
-    if not os.path.exists(data_dir) or not os.listdir(data_dir):
-        print("Data directory not found or empty, downloading pre-generated data...")
-
-        gdrive_file_id = "1NtE_4Fn3-1_BNWidZVFeSTfXf3-B50Yr"
-        zip_filename = "case14_ieee.10000_scenarios_2_variants.zip"
-        gdrive_url = f"https://drive.google.com/uc?id={gdrive_file_id}"
-
-        print(f"Downloading {zip_filename} from Google Drive...")
-        gdown.download(gdrive_url, zip_filename, quiet=False)
-
-        print(f"Extracting {zip_filename}...")
-        with zipfile.ZipFile(zip_filename, "r") as zf:
-            zf.extractall(".")
-
-        os.remove(zip_filename)
-        print(f"Data extracted to '{data_dir}'.")
-    else:
-        print(f"Data directory '{data_dir}' already exists, skipping download.")
+    assert os.path.isdir(data_dir) and os.listdir(data_dir), (
+        f"VLD data dir '{data_dir}' missing/empty. Generate it first:\n"
+        f"    python integrationtests/generate_test_data.py\n"
+        f"or set GRIDFM_VLD_DATA to an existing scenario_33radial dataset."
+    )
 
     training_config_path = prepare_training_config()
     all_runs = []
 
     for run_i in range(n_runs):
-        print(f"\n--- PF Training run {run_i + 1}/{n_runs} ---")
+        print(f"\n--- VLD run {run_i + 1}/{n_runs} ---")
+        # 1) TRAIN. Note: no --mp_context / --deterministic (not app flags).
         execute_and_live_output(
-            f"gridfm_graphkit train "
+            f"python -m gridfm_app_dist train "
             f"--config {training_config_path} "
-            f"--data_path data_out/ "
-            f"--exp_name exp1 "
+            f"--data_path {data_dir}/ "
+            f"--exp_name exp_vld "
             f"--run_name run{run_i + 1} "
-            f"--log_dir logs "
-            f"--mp_context spawn "
-            f"--deterministic warn",
+            f"--log_dir logs"
         )
-        metrics = collect_metrics_from_log("logs", pf_metric_keys)
+        # 2) PREDICT -> writes <GRID_NAME>_predictions.parquet to --output_path.
+        model_ckpt = _find_latest("logs/**/*.ckpt")
+        stats_pt = _find_latest("logs/**/normalizer_stats.pt")
+        predict_out = "predict_out"
+        os.makedirs(predict_out, exist_ok=True)
+        execute_and_live_output(
+            f"python -m gridfm_app_dist predict "
+            f"--config {training_config_path} "
+            f"--data_path {data_dir}/ "
+            f"--model_path {model_ckpt} "
+            f"--normalizer_stats {stats_pt} "
+            f"--output_path {predict_out} "
+            f"--exp_name exp_vld --run_name pred{run_i + 1} --log_dir logs"
+        )
+        metrics = collect_metrics_from_parquet(predict_out)
         all_runs.append(metrics)
 
     if calibrate_runs > 0:
-        bounds = compute_bounds(all_runs, pf_metric_keys, ci_level, calibrate_pad)
-        print_calibration_stats(all_runs, pf_metric_keys, bounds, confidence_interval=ci_level)
-        write_baseline("pf", bounds)
+        bounds = compute_bounds(all_runs, VLD_METRIC_KEYS, ci_level, calibrate_pad)
+        print_calibration_stats(all_runs, VLD_METRIC_KEYS, bounds, confidence_interval=ci_level)
+        write_baseline("vld", bounds)
         return
 
-    checks = read_baseline("pf")
+    checks = read_baseline("vld")
 
     MAX_RETRIES = 5
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
         if attempt > 1:
-            print(f"\n--- PF Retry attempt {attempt}/{MAX_RETRIES} after metric interval failure ---")
+            print(f"\n--- VLD retry {attempt}/{MAX_RETRIES} after interval failure ---")
             execute_and_live_output(
-                f"gridfm_graphkit train "
-                f"--config {training_config_path} "
-                f"--data_path data_out/ "
-                f"--exp_name exp1 "
-                f"--run_name retry{attempt} "
-                f"--log_dir logs "
-                f"--mp_context spawn "
-                f"--deterministic warn",
+                f"python -m gridfm_app_dist train "
+                f"--config {training_config_path} --data_path {data_dir}/ "
+                f"--exp_name exp_vld --run_name retry{attempt} --log_dir logs"
             )
-            metrics = collect_metrics_from_log("logs", pf_metric_keys)
+            model_ckpt = _find_latest("logs/**/*.ckpt")
+            stats_pt = _find_latest("logs/**/normalizer_stats.pt")
+            execute_and_live_output(
+                f"python -m gridfm_app_dist predict "
+                f"--config {training_config_path} --data_path {data_dir}/ "
+                f"--model_path {model_ckpt} --normalizer_stats {stats_pt} "
+                f"--output_path predict_out "
+                f"--exp_name exp_vld --run_name predretry{attempt} --log_dir logs"
+            )
+            metrics = collect_metrics_from_parquet("predict_out")
         else:
             metrics = all_runs[0]
 
         try:
             for metric_name, (lo, hi) in checks.items():
-                assert metric_name in metrics, f"Metric '{metric_name}' not found in CSV"
+                assert metric_name in metrics, f"Metric '{metric_name}' not computed"
                 value = metrics[metric_name]
                 assert lo <= value <= hi, (
-                    f"Metric '{metric_name}' value {value} is outside calibrated bounds [{lo}, {hi}]"
+                    f"Metric '{metric_name}' value {value} outside calibrated "
+                    f"bounds [{lo}, {hi}]"
                 )
-                print(f"{metric_name}: {value} is within calibrated bounds [{lo}, {hi}] (attempt {attempt})")
-            last_error = None
-            break
-        except AssertionError as e:
-            print(f"Attempt {attempt}/{MAX_RETRIES} failed: {e}")
-            last_error = e
-
-    if last_error is not None:
-        raise last_error
-
-
-@pytest.fixture
-def cleanup_opf_test_artifacts():
-    """
-    Remove generated artifacts after the OPF test.
-    """
-    yield
-
-    for d in ["data_out_opf", "logs_opf"]:
-        if os.path.exists(d):
-            shutil.rmtree(d, ignore_errors=True)
-
-
-def test_train_opf(cleanup_opf_test_artifacts, calibrate_runs, ci_level, calibrate_pad):
-    """
-    Integration test for OPF data download and gridfm-graphkit OPF training.
-
-    Steps:
-    1. Download pre-generated OPF power grid data from Google Drive
-    2. Train a model using gridfm-graphkit with the OPF config
-    3. Validate OPF-specific metrics
-
-    Pass --calibrate to pytest (defaults to 5 runs; use --calibrate N for another
-    count) to run multiple training passes and print metric stats without
-    asserting range bounds.
-    """
-
-    n_runs = max(calibrate_runs, 1)
-    opf_metric_keys = [
-        "Avg. active res. (MW)",
-        "Avg. reactive res. (MVar)",
-        "RMSE PG generators (MW)",
-        "Mean optimality gap (%)",
-        "Mean branch thermal violation from (MVA)",
-        "Mean branch thermal violation to (MVA)",
-        "Mean branch angle difference violation (radians)",
-        "Mean Qg violation PV buses",
-        "Mean Qg violation REF buses",
-        "Mean Qg violation",
-    ]
-
-    opf_data_dir = "data_out_opf"
-
-    if not os.path.exists(opf_data_dir) or not os.listdir(opf_data_dir):
-        print("OPF data directory not found or empty, downloading pre-generated data...")
-
-        gdrive_file_id = "1p5f5mRvmBQh8lZpIyWWbTbU42aHAIsdT"  # pragma: allowlist secret
-        zip_filename = "case14_ieee.10000_scenarios_2_variants_opf.zip"
-        gdrive_url = f"https://drive.google.com/uc?id={gdrive_file_id}"
-
-        print(f"Downloading {zip_filename} from Google Drive...")
-        gdown.download(gdrive_url, zip_filename, quiet=False)
-
-        print(f"Extracting {zip_filename}...")
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with zipfile.ZipFile(zip_filename, "r") as zf:
-                zf.extractall(tmpdir)
-            shutil.move(os.path.join(tmpdir, "data_out"), opf_data_dir)
-
-        os.remove(zip_filename)
-        print(f"OPF data extracted to '{opf_data_dir}'.")
-    else:
-        print(f"OPF data directory '{opf_data_dir}' already exists, skipping download.")
-
-    training_config_path = prepare_opf_training_config()
-    all_runs = []
-
-    for run_i in range(n_runs):
-        print(f"\n--- OPF Training run {run_i + 1}/{n_runs} ---")
-        execute_and_live_output(
-            f"gridfm_graphkit train "
-            f"--config {training_config_path} "
-            f"--data_path {opf_data_dir}/ "
-            f"--exp_name exp_opf "
-            f"--run_name run{run_i + 1} "
-            f"--log_dir logs_opf "
-            f"--mp_context spawn "
-            f"--deterministic warn",
-        )
-        metrics = collect_metrics_from_log("logs_opf", opf_metric_keys)
-        all_runs.append(metrics)
-
-    if calibrate_runs > 0:
-        bounds = compute_bounds(all_runs, opf_metric_keys, ci_level, calibrate_pad)
-        print_calibration_stats(all_runs, opf_metric_keys, bounds, confidence_interval=ci_level)
-        write_baseline("opf", bounds)
-        return
-
-    checks = read_baseline("opf")
-
-    MAX_RETRIES = 5
-    last_error = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        if attempt > 1:
-            print(f"\n--- OPF Retry attempt {attempt}/{MAX_RETRIES} after metric interval failure ---")
-            execute_and_live_output(
-                f"gridfm_graphkit train "
-                f"--config {training_config_path} "
-                f"--data_path {opf_data_dir}/ "
-                f"--exp_name exp_opf "
-                f"--run_name retry{attempt} "
-                f"--log_dir logs_opf "
-                f"--mp_context spawn "
-                f"--deterministic warn",
-            )
-            metrics = collect_metrics_from_log("logs_opf", opf_metric_keys)
-        else:
-            metrics = all_runs[0]
-
-        try:
-            for metric_name, (lo, hi) in checks.items():
-                assert metric_name in metrics, f"Metric '{metric_name}' not found in CSV"
-                value = metrics[metric_name]
-                assert lo <= value <= hi, (
-                    f"Metric '{metric_name}' value {value} is outside calibrated bounds [{lo}, {hi}]"
-                )
-                print(f"{metric_name}: {value} is within calibrated bounds [{lo}, {hi}] (attempt {attempt})")
+                print(f"{metric_name}: {value} within [{lo}, {hi}] (attempt {attempt})")
             last_error = None
             break
         except AssertionError as e:
