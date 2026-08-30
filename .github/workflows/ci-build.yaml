@@ -44,6 +44,15 @@ jobs:
       steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          lfs: true # Download the real Git-LFS blobs instead of the ~130-byte LFS pointer text. Without this, torch.load reads the pointer and fails with the "Unsupported operand" error.
+
+      - name: Ensure LFS objects are present
+        run: |
+          # slim image may not ship git-lfs; install then materialise blobs
+          apt-get update && apt-get install -y --no-install-recommends git-lfs 
+          git lfs install
+          git lfs pull
 
       - name: Install dependencies
         run: |
