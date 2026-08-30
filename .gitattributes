@@ -1,3 +1,4 @@
 *.m linguist-detectable=false
 *.mat linguist-detectable=false
+/tests/model/dummy_model.pt filter=lfs diff=lfs merge=lfs -text
 tests/models/dummy_model.pt filter=lfs diff=lfs merge=lfs -text
