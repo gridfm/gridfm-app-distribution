@@ -210,8 +210,6 @@ jobs:
 
       - name: Create audit environment and install editable packages
         run: |
-          python -m venv .audit-venv
-          source .audit-venv/bin/activate
           python -m pip install --upgrade pip "setuptools>=83.0.0"
           python -m pip install -e ".[dev,test]"
           python -m pip check
