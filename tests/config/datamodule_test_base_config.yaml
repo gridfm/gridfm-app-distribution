@@ -8,19 +8,19 @@ data:
   mask_value: 0.0                   # Initial value for masked parameters
   val_ratio: 0.1                    # ratio of data for validation
   test_ratio: 0.1                   # ratio of data for testing
-  workers: 1
+  workers: 4
 
 model:
   type: GNS_heterogeneous           # was GPSTransformer (not available in new repo)
-  attention_head: 2
+  attention_head: 8
   dropout: 0.1
   edge_dim: 13                      # Additional edge features BRANCH_BASE_STATUS_E(11) + BRANCH_CONT_E(12)
-  hidden_size: 16
+  hidden_size: 256
   input_bus_dim: 17                 # Additional bus features + BUS_BASE_STATUS_H(15) + BUS_CONT_H(16)
   input_gen_dim: 6                  # Additional generator node-type feature dim
   output_bus_dim: 5
   output_gen_dim: 1
-  num_layers: 2
+  num_layers: 8
 
 training:
   batch_size: 1
