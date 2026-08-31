@@ -9,10 +9,10 @@ namespaces = false
 [project]
 name = "gridfm-app-distribution"
 description = "Grid Foundation Model for electricity distribution use cases"
-version = "0.8.1"
+version = "0.0.1"
 readme = "README.md"
 license = "Apache-2.0"
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.10,<3.13"
 
 authors = [
   {name = "Mikka Kisuule", email = "mikka.kisuule@inesctec.pt"},
@@ -29,14 +29,12 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
-  "Topic :: Scientific/Engineering :: Artificial Intelligence8 for Electrical power grids"
+  "Topic :: Scientific/Engineering :: Artificial Intelligence"
 ]
 
 
 dependencies = [
-    "mlflow>=3.15.0",
-    "pyarrow>=23.0.1",
-    "lightning>=2.6.5",
+    "mlflow>=3.1.0", #or upgrade to "mlflow>=3.15.0",
     "nbformat>=5.10.4",
     "networkx>=3.4.2",
     "numpy>=2.2.6",
@@ -44,15 +42,17 @@ dependencies = [
     "pandas>=2.3.0",
     "plotly>=6.1.2",
     "pyyaml>=6.0.2",
-    "torch>=2.10", #Install torch scatter separately
+    "torch>=2.10,<2.13", 
     "torch-geometric>=2.6.1",
     "torchaudio>=2.10",
     "torchvision>=0.25",
-    "lightning",
+    "lightning", # or upgrade to "lightning>=2.6.5",
     "seaborn",
     "urllib3>=2.6.0",
     "gdown>=6.0.0",
-]
+    "gridfm-datakit==1.1.0",
+    "pyarrow>=23.0.1", #Added
+    # Added from url to match torch version "torch-scatter>=2.1.2", 
 
 [project.optional-dependencies]
 dev = [
@@ -66,6 +66,16 @@ dev = [
 test = [
   "pytest",
   "pytest-cov"
+]
+
+# torch-scatter is not on PyPI — it requires a PyG wheel index matching your torch version.
+# The find-links URL below must be updated whenever the torch version in [project.dependencies] changes.
+# CPU:  https://data.pyg.org/whl/torch-X.Y.Z+cpu.html
+# CUDA: https://data.pyg.org/whl/torch-X.Y.Z+cuNNN.html
+# After updating, regenerate the lock file with: uv lock
+find-links = [
+    "https://data.pyg.org/whl/torch-2.12.0+cpu.html",
+    "https://data.pyg.org/whl/torch-2.12.0+cu126.html",
 ]
 
 [project.scripts]
