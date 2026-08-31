@@ -52,7 +52,6 @@ dependencies = [
     "seaborn",
     "urllib3>=2.6.0",
     "gdown>=6.0.0",
-    "cryptography>=50.0.0"
 ]
 
 [project.optional-dependencies]
