@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools >= 75.8.0"]
+requires = ["setuptools >= 83.0.0"] 
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
@@ -34,7 +34,9 @@ classifiers = [
 
 
 dependencies = [
-    "mlflow>=3.1.0",
+    "mlflow>=3.15.0",
+    "pyarrow>=23.0.1",
+    "lightning>=2.6.5",
     "nbformat>=5.10.4",
     "networkx>=3.4.2",
     "numpy>=2.2.6",
