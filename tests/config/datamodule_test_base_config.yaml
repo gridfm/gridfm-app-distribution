@@ -26,7 +26,7 @@ training:
   batch_size: 1
   epochs: 1
   losses: ["MaskedMSE", "PBE", "VLDTopologyLoss"]
-  loss_weights: [0.05, 0.55, 0.40]
+  loss_weights: [0.05, 0.15, 0.80]
 
 
   loss_args: # parameters for tuning the loss functions

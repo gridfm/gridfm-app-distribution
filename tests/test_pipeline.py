@@ -68,7 +68,6 @@ def test_cli_commands(parser, config, command):
 
     if command in ["finetune", "evaluate"]:
         args_list += ["--model_path", MODEL_PATH]
-
     args = parser.parse_args(args_list)
 
     # Should run without raising
@@ -97,6 +96,5 @@ def test_entrypoint_train(config):
         "--run_name",
         RUN_NAME,
     ]
-
     with mock.patch.object(sys, "argv", test_argv):
         main()
