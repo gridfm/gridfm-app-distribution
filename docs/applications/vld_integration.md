@@ -4,7 +4,7 @@ This document describes the changes made to [`gridfm-graphkit`](https://github.c
 integrate the new **Voltage-Loss-Detection (VLD)** task in the new
 (`gridfm_app_dist`) in the `gridfm-app-distribution` package is laid out.
 
-## Task summary 
+## Task summary
 The VLD task teaches the heterogeneous GNS to predict, per bus, whether that bus
 remains energized after a set of component failures (contingencies), and to
 predict a consistent voltage magnitude for the energized buses. This turns the

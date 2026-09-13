@@ -6,18 +6,25 @@ from gridfm_app_dist.datasets.hetero_powergrid_datamodule import LitGridHeteroDa
 from gridfm_app_dist.datasets.normalizers import HeteroDataMVANormalizer
 from gridfm_app_dist.io.param_handler import NestedNamespace
 from gridfm_app_dist.datasets.globals import VM_H, VA_H, QG_H, PG_BUS_H
-from torch_scatter import scatter_add
+
+# from torch_scatter import scatter_add
 from gridfm_app_dist.models.utils import (
     ComputeBranchFlow,
     ComputeNodeInjection,
     ComputeNodeResiduals,
 )
 
+
 def _load_energized_graph():
     """Load a deterministic FULLY-ENERGIZED processed graph and normalize it"""
-    data_dict = torch.load("tests/data/scenario_33radial/processed/data_index_64.pt", weights_only=True)
+    data_dict = torch.load(
+        "tests/data/scenario_33radial/processed/data_index_64.pt", weights_only=True,
+    )
     data = HeteroData.from_dict(data_dict)
-    node_stats = torch.load("tests/data/scenario_33radial/processed/data_stats_HeteroDataMVANormalizer.pt",weights_only=True)
+    node_stats = torch.load(
+        "tests/data/scenario_33radial/processed/data_stats_HeteroDataMVANormalizer.pt",
+        weights_only=True,
+    )
     with open("tests/config/datamodule_test_base_config.yaml") as f:
         args = NestedNamespace(**yaml.safe_load(f))
     normalizer = HeteroDataMVANormalizer(args)
@@ -42,6 +49,7 @@ def small_grid_data_module():
     dm.setup("train")
     return dm
 
+
 def test_pbe_loss_zero_with_real_data():
     batch = _load_energized_graph()
 
@@ -56,10 +64,12 @@ def test_pbe_loss_zero_with_real_data():
     # Build the PBE target entirely from the bus label so Pg and Qg come from the SAME source and per-unit base
     target = torch.stack(
         [
-            batch.y_dict["bus"][:, VM_H],       # VM_OUT = 0
-            batch.y_dict["bus"][:, VA_H],       # VA_OUT = 1
-            batch.y_dict["bus"][:, PG_BUS_H],   # PG_OUT = 2  (net bus Pg, same base as Qg)
-            batch.y_dict["bus"][:, QG_H],       # QG_OUT = 3
+            batch.y_dict["bus"][:, VM_H],  # VM_OUT = 0
+            batch.y_dict["bus"][:, VA_H],  # VA_OUT = 1
+            batch.y_dict["bus"][
+                :, PG_BUS_H,
+            ],  # PG_OUT = 2  (net bus Pg, same base as Qg)
+            batch.y_dict["bus"][:, QG_H],  # QG_OUT = 3
         ],
         dim=1,
     )
@@ -89,9 +99,12 @@ def test_pbe_loss_zero_with_real_data():
     # 1e-3 bounds the data's intrinsic PF-reconstruction residual without masking any code error;
     # tighten this only after regenerating data with a stricter power-flow tolerance / matched line-charging convention.
     PBE_TOL = 1e-3
-    assert max_res_P < PBE_TOL, f"Active residuals nonzero on energized buses! {max_res_P}"
-    assert max_res_Q < PBE_TOL, f"Reactive residuals nonzero on energized buses! {max_res_Q}"
-
+    assert max_res_P < PBE_TOL, (
+        f"Active residuals nonzero on energized buses! {max_res_P}"
+    )
+    assert max_res_Q < PBE_TOL, (
+        f"Reactive residuals nonzero on energized buses! {max_res_Q}"
+    )
 
 
 """

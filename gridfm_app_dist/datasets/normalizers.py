@@ -17,7 +17,6 @@ from gridfm_app_dist.datasets.globals import (
     GS,
     BS,
     VN_KV,
-
     # Output feature indices
     PG_OUT,
     QG_OUT,
@@ -26,7 +25,6 @@ from gridfm_app_dist.datasets.globals import (
     PG_OUT_GEN,
     BUS_STATUS_TARGET,
     PG_BUS_H,
-
     # Generator feature indices
     PG_H,
     MIN_PG,
@@ -34,7 +32,6 @@ from gridfm_app_dist.datasets.globals import (
     C0_H,
     C1_H,
     C2_H,
-
     # Edge feature indices
     P_E,
     Q_E,
@@ -157,7 +154,10 @@ class HeteroDataMVANormalizer(Normalizer):
             gen_data = pd.DataFrame()
         has_generators = not gen_data.empty
 
-        assert (bus_data.scenario.min() == 0 and bus_data.scenario.max() == len(bus_data.scenario.unique()) - 1)
+        assert (
+            bus_data.scenario.min() == 0
+            and bus_data.scenario.max() == len(bus_data.scenario.unique()) - 1
+        )
 
         bus_data = bus_data[bus_data["scenario"].isin(scenario_ids)]
         if has_generators:

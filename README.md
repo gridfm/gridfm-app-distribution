@@ -1,7 +1,7 @@
 # GridFM App Distribution
 
-GridFM Distribution appkit`gridfm-app-distribution` is a Python library to train, finetune, and predict a foundation model of an electrical power grid. 
-Specialised training tasks can be developed for specific distribution applications.  
+GridFM Distribution appkit`gridfm-app-distribution` is a Python library to train, finetune, and predict a foundation model of an electrical power grid.
+Specialised training tasks can be developed for specific distribution applications.
 
 
 # Installation

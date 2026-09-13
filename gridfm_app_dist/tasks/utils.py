@@ -172,6 +172,7 @@ class PhysicsDecoderSE(nn.Module):
         output = torch.stack([Vm_out, Va_out, P_in - p_shunt, Q_in - q_shunt], dim=1)
         return output
 
+
 #########################
 @PHYSICS_DECODER_REGISTRY.register("VoltageLossDetection")
 class PhysicsDecoderVLD(nn.Module):
@@ -202,7 +203,10 @@ class PhysicsDecoderVLD(nn.Module):
 
         output = torch.stack([Vm_out, Va_out, Pg_new, Qg_new], dim=1)
         return output
+
+
 ########################
+
 
 class ComputeNodeResiduals(nn.Module):
     """Compute net residuals per bus combining branch flows, generators, loads, and shunts."""

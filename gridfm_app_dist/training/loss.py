@@ -35,11 +35,11 @@ from gridfm_app_dist.datasets.globals import (
     # Generator feature indices
     PG_H,
     #####################
-    ## Indices of features of the VLD task
+    # Indices of features of the VLD task
     # Bus feature indices
     BUS_BASE_STATUS_H,
     BUS_CONT_H,
-    B_ON,
+    # B_ON,
     # Branch feature indices
     BRANCH_BASE_STATUS_E,
     BRANCH_CONT_E,
@@ -289,8 +289,6 @@ class MixedLoss(BaseLoss):
         return loss_details
 
 
-
-
 @LOSS_REGISTRY.register("LayeredWeightedPhysics")
 class LayeredWeightedPhysicsLoss(BaseLoss):
     def __init__(self, loss_args, args) -> None:
@@ -387,6 +385,7 @@ class LossPerDim(BaseLoss):
             f"MAE loss {self.dim}": mae_loss.detach(),
         }
 
+
 #######################
 # ---------------------------------------------------------------------------
 # VLD (Voltage Loss Detection) task loss
@@ -420,7 +419,9 @@ class VLDTopologyLoss(BaseLoss):
         self.off_vm_weight = getattr(loss_args, "off_vm_weight", 1.0)
         self.on_vm_weight = getattr(loss_args, "on_vm_weight", 0.5)
         self.unreachable_l1_weight = getattr(loss_args, "unreachable_l1_weight", 1.0)
-        self.topology_confidence_gamma = getattr(loss_args, "topology_confidence_gamma", 10.0)
+        self.topology_confidence_gamma = getattr(
+            loss_args, "topology_confidence_gamma", 10.0,
+        )
 
     @staticmethod
     def _build_graph_reachability(
@@ -438,13 +439,13 @@ class VLDTopologyLoss(BaseLoss):
         directly hit by contingency. A branch is traversable if base branch status
         is on and it is not hit by contingency.
         """
-        bus_base = (bus_x[:, BUS_BASE_STATUS_H] > threshold)
-        bus_hit = (bus_x[:, BUS_CONT_H] > threshold)
+        bus_base = bus_x[:, BUS_BASE_STATUS_H] > threshold
+        bus_hit = bus_x[:, BUS_CONT_H] > threshold
         bus_available = bus_base & (~bus_hit)
 
         src, dst = edge_index
-        branch_base = (edge_attr[:, BRANCH_BASE_STATUS_E] > threshold)
-        branch_hit = (edge_attr[:, BRANCH_CONT_E] > threshold)
+        branch_base = edge_attr[:, BRANCH_BASE_STATUS_E] > threshold
+        branch_hit = edge_attr[:, BRANCH_CONT_E] > threshold
         branch_available = branch_base & (~branch_hit)
 
         reachable = torch.zeros(num_bus, dtype=torch.bool, device=device)
@@ -466,13 +467,13 @@ class VLDTopologyLoss(BaseLoss):
         return reachable.float(), bus_available.float()
 
     def forward(
-            self,
-            pred_dict,
-            target_dict,
-            edge_index_dict,
-            edge_attr_dict,
-            mask_dict,
-            model=None,
+        self,
+        pred_dict,
+        target_dict,
+        edge_index_dict,
+        edge_attr_dict,
+        mask_dict,
+        model=None,
     ):
         bus_pred = pred_dict["bus"]
         bus_target = target_dict["bus"]
@@ -481,13 +482,13 @@ class VLDTopologyLoss(BaseLoss):
         if bus_x is None:
             raise RuntimeError(
                 "VLDTopologyLoss requires model.latest_x_dict['bus']. "
-                "Store x_dict on the model inside the forward pass."
+                "Store x_dict on the model inside the forward pass.",
             )
 
         if bus_pred.size(1) <= BUS_STATUS_LOGIT_OUT:
             raise ValueError(
                 "VLDTopologyLoss expects bus predictions to include a status logit "
-                f"at column {BUS_STATUS_LOGIT_OUT}."
+                f"at column {BUS_STATUS_LOGIT_OUT}.",
             )
 
         edge_index = edge_index_dict[("bus", "connects", "bus")]
@@ -513,7 +514,7 @@ class VLDTopologyLoss(BaseLoss):
         pred_vm = bus_pred[:, VM_OUT].float()
 
         topology_confidence = torch.exp(
-            -self.topology_confidence_gamma * torch.abs(bus_available - topo_target)
+            -self.topology_confidence_gamma * torch.abs(bus_available - topo_target),
         )
 
         topology_bce_raw = F.binary_cross_entropy_with_logits(
@@ -532,12 +533,18 @@ class VLDTopologyLoss(BaseLoss):
         unreachable_mask = (topo_target < 0.5).float()
         reachable_mask = (topo_target >= 0.5).float()
 
-        off_vm_l2 = ((pred_vm ** 2) * unreachable_mask).sum() / unreachable_mask.sum().clamp_min(1.0)
-        off_vm_l1 = (pred_vm.abs() * unreachable_mask).sum() / unreachable_mask.sum().clamp_min(1.0)
+        off_vm_l2 = (
+            (pred_vm**2) * unreachable_mask
+        ).sum() / unreachable_mask.sum().clamp_min(1.0)
+        off_vm_l1 = (
+            pred_vm.abs() * unreachable_mask
+        ).sum() / unreachable_mask.sum().clamp_min(1.0)
         off_vm_loss = off_vm_l2 + self.unreachable_l1_weight * off_vm_l1
 
         on_vm_sq = ((pred_vm - target_vm) ** 2) * reachable_mask * status_prob.detach()
-        on_vm_loss = on_vm_sq.sum() / (reachable_mask * status_prob.detach()).sum().clamp_min(1.0)
+        on_vm_loss = on_vm_sq.sum() / (
+            reachable_mask * status_prob.detach()
+        ).sum().clamp_min(1.0)
 
         total_loss = (
             self.topology_weight * topology_bce
@@ -559,7 +566,10 @@ class VLDTopologyLoss(BaseLoss):
             "VLD Topology Accuracy": topo_acc.detach(),
             "VLD Target Accuracy": target_acc.detach(),
         }
+
+
 #######################
+
 
 # ---------------------------------------------------------------------------
 # Physics-based losses carried over unchanged from gridfm-graphkit.
@@ -611,10 +621,16 @@ class PBELoss(BaseLoss):
         edge_offdiag = bus_edge_attr[:, YFT_TF_R] + 1j * bus_edge_attr[:, YFT_TF_I]
 
         Y_diag_r = scatter_add(
-            bus_edge_attr[:, YFF_TT_R], bus_edge_index[0], dim=0, dim_size=num_bus,
+            bus_edge_attr[:, YFF_TT_R],
+            bus_edge_index[0],
+            dim=0,
+            dim_size=num_bus,
         )
         Y_diag_i = scatter_add(
-            bus_edge_attr[:, YFF_TT_I], bus_edge_index[0], dim=0, dim_size=num_bus,
+            bus_edge_attr[:, YFF_TT_I],
+            bus_edge_index[0],
+            dim=0,
+            dim_size=num_bus,
         )
         Y_diag = Y_diag_r + 1j * Y_diag_i
 
@@ -624,12 +640,15 @@ class PBELoss(BaseLoss):
 
         diag_idx = torch.arange(num_bus, device=bus_edge_index.device)
         full_edge_index = torch.cat(
-            [bus_edge_index, torch.stack([diag_idx, diag_idx])], dim=1,
+            [bus_edge_index, torch.stack([diag_idx, diag_idx])],
+            dim=1,
         )
         full_edge_values = torch.cat([edge_offdiag, Y_diag])
 
         Y_bus_sparse = to_torch_coo_tensor(
-            full_edge_index, full_edge_values, size=(num_bus, num_bus),
+            full_edge_index,
+            full_edge_values,
+            size=(num_bus, num_bus),
         )
         Y_bus_conj = torch.conj(Y_bus_sparse)
 
@@ -637,7 +656,10 @@ class PBELoss(BaseLoss):
 
         gen_to_bus_ei = edge_index_dict[("gen", "connected_to", "bus")]
         target_pg_agg = scatter_add(
-            target_dict["gen"][:, PG_H], gen_to_bus_ei[1], dim=0, dim_size=num_bus,
+            target_dict["gen"][:, PG_H],
+            gen_to_bus_ei[1],
+            dim=0,
+            dim_size=num_bus,
         )
         gen_pg_masked = mask_dict["gen"][:, PG_H].float()
         any_gen_masked = (
@@ -650,13 +672,19 @@ class PBELoss(BaseLoss):
         # status logit at column 4 as a predicted load-power value. Only base-task
         # outputs (>= 6 columns) carry genuine PD/QD predictions.
         if pred_bus.size(1) > BUS_STATUS_TARGET:
-            Pd = torch.where(mask_bus[:, PD_H], pred_bus[:, PD_OUT], target_bus[:, PD_H])
-            Qd = torch.where(mask_bus[:, QD_H], pred_bus[:, QD_OUT], target_bus[:, QD_H])
+            Pd = torch.where(
+                mask_bus[:, PD_H], pred_bus[:, PD_OUT], target_bus[:, PD_H],
+            )
+            Qd = torch.where(
+                mask_bus[:, QD_H], pred_bus[:, QD_OUT], target_bus[:, QD_H],
+            )
         else:
             Pd = target_bus[:, PD_H]
             Qd = target_bus[:, QD_H]
         if pred_bus.size(1) > QG_OUT:
-            Qg = torch.where(mask_bus[:, QG_H], pred_bus[:, QG_OUT], target_bus[:, QG_H])
+            Qg = torch.where(
+                mask_bus[:, QG_H], pred_bus[:, QG_OUT], target_bus[:, QG_H],
+            )
         else:
             Qg = target_bus[:, QG_H]
 

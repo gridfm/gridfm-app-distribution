@@ -31,5 +31,5 @@ def compute_ac_dc_metrics(artifacts_dir, raw_dir, grid_name, sn_mva):
         "compute_ac_dc_metrics is not ported into gridfm-dist-app. "
         "It is unrelated to the VoltageLossDetection task. Port the body from "
         "gridfm_graphkit/tasks/compute_ac_dc_metrics.py if AC/DC baseline "
-        "metrics are required."
+        "metrics are required.",
     )

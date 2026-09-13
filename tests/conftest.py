@@ -21,12 +21,15 @@ from gridfm_app_dist.datasets.hetero_powergrid_datamodule import LitGridHeteroDa
 from gridfm_app_dist.datasets.normalizers import HeteroDataMVANormalizer
 from gridfm_app_dist.io.param_handler import NestedNamespace
 
-_STATS_PATH = "tests/data/scenario_33radial/processed/data_stats_HeteroDataMVANormalizer.pt"
+_STATS_PATH = (
+    "tests/data/scenario_33radial/processed/data_stats_HeteroDataMVANormalizer.pt"
+)
 _CONFIG_PATH = "tests/config/datamodule_test_base_config.yaml"
 
 
 class _DummyTrainer:
     """Minimal stand-in for a Lightning Trainer used only during test setup."""
+
     is_global_zero = True
     logger = None  # prevents AttributeError in hetero_powergrid_datamodule.setup()
 

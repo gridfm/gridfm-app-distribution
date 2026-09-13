@@ -44,7 +44,9 @@ def _cpu_model() -> str:
         pass
     if platform.system() == "Darwin":
         try:
-            return subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], text=True).strip()
+            return subprocess.check_output(
+                ["sysctl", "-n", "machdep.cpu.brand_string"], text=True,
+            ).strip()
         except (OSError, subprocess.CalledProcessError):
             pass
     return platform.processor() or platform.machine()
@@ -71,7 +73,9 @@ def environment_fingerprint() -> dict:
         if torch.backends.cudnn.is_available():
             fp["cudnn"] = torch.backends.cudnn.version()
         if torch.cuda.is_available():
-            fp["gpus"] = [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]
+            fp["gpus"] = [
+                torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())
+            ]
     except Exception:
         pass
     return fp
@@ -79,12 +83,17 @@ def environment_fingerprint() -> dict:
 
 def warn_on_fingerprint_mismatch(saved: dict, current: dict) -> None:
     if not saved:
-        warnings.warn("Calibration baseline has no environment fingerprint; cannot verify it was calibrated on this machine.", stacklevel=2)
+        warnings.warn(
+            "Calibration baseline has no environment fingerprint; cannot verify it was calibrated on this machine.",
+            stacklevel=2,
+        )
         return
     diffs = []
     for key in sorted(set(saved) | set(current)):
         if saved.get(key) != current.get(key):
-            diffs.append(f"{key}: baseline={saved.get(key)!r}  current={current.get(key)!r}")
+            diffs.append(
+                f"{key}: baseline={saved.get(key)!r}  current={current.get(key)!r}",
+            )
     if diffs:
         warnings.warn(
             "Calibration baseline was measured in a DIFFERENT environment; metric bounds may not hold here. "
@@ -97,7 +106,11 @@ def warn_on_fingerprint_mismatch(saved: dict, current: dict) -> None:
 # ----------------------------------------------------------------------------
 # Calibration baseline I/O
 # ----------------------------------------------------------------------------
-DEFAULT_BASELINE_PATH = os.path.join(os.path.dirname(__file__), "calibration_baseline.json")
+DEFAULT_BASELINE_PATH = os.path.join(
+    os.path.dirname(__file__), "calibration_baseline.json",
+)
+
+
 def baseline_path() -> str:
     return os.environ.get("GRIDFM_CALIBRATION_BASELINE", DEFAULT_BASELINE_PATH)
 
@@ -159,6 +172,7 @@ def execute_and_live_output(cmd) -> None:
     env = os.environ.copy()
     env.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     subprocess.run(cmd, text=True, shell=True, check=True, env=env)
+
 
 # ----------------------------------------------------------------------------
 # VLD metric computation FROM THE PREDICTIONS PARQUET (the key rewrite)
@@ -225,7 +239,9 @@ def print_calibration_stats(all_runs, metric_keys, bounds, confidence_interval=0
         mean = float(np.mean(arr))
         std = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
         lo, hi = bounds[key]
-        print(f"  {key:<{col_w}}  {mean:>10.4f}  {std:>12.4f}  {lo:>12.4f}  {hi:>12.4f}")
+        print(
+            f"  {key:<{col_w}}  {mean:>10.4f}  {std:>12.4f}  {lo:>12.4f}  {hi:>12.4f}",
+        )
     print("=" * (len(header)) + "\n")
 
 
@@ -237,6 +253,7 @@ def print_calibration_stats(all_runs, metric_keys, bounds, confidence_interval=0
 VLD_CONFIG_PATH = os.environ.get("GRIDFM_VLD_CONFIG", "scripts/config/default.yaml")
 VLD_DATA_PATH = os.environ.get("GRIDFM_VLD_DATA", "tests/data")
 LOG_PATH = os.environ.get("LOG_PATH", "integrationtests/logs")
+
 
 def prepare_training_config():
     with open(VLD_CONFIG_PATH, "r") as f:
@@ -315,7 +332,7 @@ def test_train_vld(cleanup_test_artifacts, calibrate_runs, ci_level, calibrate_p
             f"--data_path {data_dir} "
             f"--exp_name exp_vld "
             f"--run_name run{run_i + 1} "
-            f"--log_dir {log_dir}"
+            f"--log_dir {log_dir}",
         )
         # 2) PREDICT -> writes <GRID_NAME>_predictions.parquet to --output_path.
         model_ckpt = _find_latest("logs/**/*.ckpt")
@@ -329,14 +346,16 @@ def test_train_vld(cleanup_test_artifacts, calibrate_runs, ci_level, calibrate_p
             f"--model_path {model_ckpt} "
             f"--normalizer_stats {stats_pt} "
             f"--output_path {predict_out} "
-            f"--exp_name exp_vld --run_name pred{run_i + 1} --log_dir logs"
+            f"--exp_name exp_vld --run_name pred{run_i + 1} --log_dir logs",
         )
         metrics = collect_metrics_from_parquet(predict_out)
         all_runs.append(metrics)
 
     if calibrate_runs > 0:
         bounds = compute_bounds(all_runs, VLD_METRIC_KEYS, ci_level, calibrate_pad)
-        print_calibration_stats(all_runs, VLD_METRIC_KEYS, bounds, confidence_interval=ci_level)
+        print_calibration_stats(
+            all_runs, VLD_METRIC_KEYS, bounds, confidence_interval=ci_level,
+        )
         write_baseline("vld", bounds)
         return
 
@@ -350,7 +369,7 @@ def test_train_vld(cleanup_test_artifacts, calibrate_runs, ci_level, calibrate_p
             execute_and_live_output(
                 f"python -m gridfm_app_dist train "
                 f"--config {training_config_path} --data_path {data_dir}/ "
-                f"--exp_name exp_vld --run_name retry{attempt} --log_dir logs"
+                f"--exp_name exp_vld --run_name retry{attempt} --log_dir logs",
             )
             model_ckpt = _find_latest("logs/**/*.ckpt")
             stats_pt = _find_latest("logs/**/normalizer_stats.pt")
@@ -359,7 +378,7 @@ def test_train_vld(cleanup_test_artifacts, calibrate_runs, ci_level, calibrate_p
                 f"--config {training_config_path} --data_path {data_dir}/ "
                 f"--model_path {model_ckpt} --normalizer_stats {stats_pt} "
                 f"--output_path predict_out "
-                f"--exp_name exp_vld --run_name predretry{attempt} --log_dir logs"
+                f"--exp_name exp_vld --run_name predretry{attempt} --log_dir logs",
             )
             metrics = collect_metrics_from_parquet("predict_out")
         else:

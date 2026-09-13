@@ -13,6 +13,7 @@ from gridfm_app_dist.datasets.globals import (
     BUS_STATUS_LOGIT_OUT,
 )
 
+
 @TASK_REGISTRY.register("VoltageLossDetection")
 class VoltageLossDetectionTask(ReconstructionTask):
     """
@@ -80,7 +81,7 @@ class VoltageLossDetectionTask(ReconstructionTask):
                 "status_true": status_true.detach().cpu(),
                 "vm_pred": vm_pred.detach().cpu(),
                 "vm_true": vm_true.detach().cpu(),
-            }
+            },
         )
 
     def on_test_end(self):
@@ -129,9 +130,12 @@ class VoltageLossDetectionTask(ReconstructionTask):
                     "status_true": status_true,
                     "vm_pred": vm_pred,
                     "vm_true": vm_true,
-                }
+                },
             )
-            df.to_csv(os.path.join(test_dir, f"{dataset_name}_vld_predictions.csv"), index=False)
+            df.to_csv(
+                os.path.join(test_dir, f"{dataset_name}_vld_predictions.csv"),
+                index=False,
+            )
 
         self.test_outputs.clear()
 
@@ -145,7 +149,10 @@ class VoltageLossDetectionTask(ReconstructionTask):
         scenario_ids = batch["scenario_id"][bus_batch]
 
         local_bus_idx = torch.cat(
-            [torch.arange(c, device=bus_batch.device) for c in torch.bincount(bus_batch)]
+            [
+                torch.arange(c, device=bus_batch.device)
+                for c in torch.bincount(bus_batch)
+            ],
         )
 
         return {
@@ -154,5 +161,8 @@ class VoltageLossDetectionTask(ReconstructionTask):
             "vm_pred": bus_pred[:, VM_OUT].detach().cpu().numpy(),
             "status_prob": status_prob.detach().cpu().numpy(),
             "status_pred": (status_prob >= 0.9).float().detach().cpu().numpy(),
-            "status_true": batch.y_dict["bus"][:, BUS_STATUS_TARGET].detach().cpu().numpy(),
+            "status_true": batch.y_dict["bus"][:, BUS_STATUS_TARGET]
+            .detach()
+            .cpu()
+            .numpy(),
         }

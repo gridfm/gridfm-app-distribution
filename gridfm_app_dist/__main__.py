@@ -7,6 +7,7 @@ from gridfm_app_dist.cli import main_cli, benchmark_cli
 import subprocess
 import os
 
+
 def _warn_mp_context_on_linux(mp_context):
     """On Linux, recommend 'spawn' when mp_context is unset, 'fork', or 'forkserver'."""
     if platform.system() != "Linux":
@@ -78,7 +79,7 @@ def set_env():
         else:
             raise RuntimeError(
                 "Unable to compute NODE_RANK from LSF metadata: "
-                f"HOSTNAME='{current_host}', HOST_LIST={HOST_LIST}"
+                f"HOSTNAME='{current_host}', HOST_LIST={HOST_LIST}",
             )
 
     os.environ["NODE_RANK"] = str(
@@ -88,7 +89,6 @@ def set_env():
         "ib,bond"  # avoids using docker of loopback interface
     )
     os.environ["NCCL_IB_CUDA_SUPPORT"] = "1"  # Force use of infiniband
-
 
 
 def main():

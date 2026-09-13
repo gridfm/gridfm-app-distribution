@@ -5,7 +5,6 @@ from torch_geometric.data import HeteroData
 from gridfm_app_dist.datasets.globals import (
     # Generator feature indices
     G_ON,
-
     # Edge feature indices
     B_ON,
     YFF_TT_I,
@@ -125,6 +124,7 @@ class LoadGridParamsFromPath(BaseTransform):
         data["gen"].x[:, G_ON] = grid_data["gen"].x[:, G_ON]
         return data
 
+
 ##################
 class RemoveInactiveBranchesKeepTopology(BaseTransform):
     """
@@ -147,7 +147,7 @@ class LoadGridParamsFromPathVLD(BaseTransform):
         super().__init__()
         self.grid_path = args.task.grid_path
         self.grid_data = HeteroData.from_dict(
-            torch.load(self.grid_path, weights_only=True)
+            torch.load(self.grid_path, weights_only=True),
         )
         self.normalizer = HeteroDataMVANormalizer(args)
         self.normalizer.vn_kv_max = 1
@@ -167,5 +167,6 @@ class LoadGridParamsFromPathVLD(BaseTransform):
 
         data["gen"].x[:, G_ON] = grid_data["gen"].x[:, G_ON]
         return data
-##################
 
+
+##################

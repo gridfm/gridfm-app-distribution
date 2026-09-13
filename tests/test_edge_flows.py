@@ -56,7 +56,7 @@ def test_edge_flows():
         bus_edge_index,
         bus_edge_attr,
     )
-    BRANCH_ATOL = 1e-3 #loosensed from 1e-4 due to data generation tolerance (increase for precision training)
+    BRANCH_ATOL = 1e-3  # loosensed from 1e-4 due to data generation tolerance (increase for precision training)
     assert torch.isclose(Pft, bus_edge_attr[:, P_E], atol=BRANCH_ATOL).all()
     assert torch.isclose(Qft, bus_edge_attr[:, Q_E], atol=BRANCH_ATOL).all()
 
@@ -83,13 +83,17 @@ def test_edge_flows():
     }
 
     vm_loss = LossPerDim(NestedNamespace(**{"loss_str": "MAE", "dim": "VM"}), None)(
-        pred_dict, target_dict, edge_index, None, None
+        pred_dict, target_dict, edge_index, None, None,
     )["loss"]
     va_loss = LossPerDim(NestedNamespace(**{"loss_str": "MAE", "dim": "VA"}), None)(
-        pred_dict, target_dict, edge_index, None, None
+        pred_dict, target_dict, edge_index, None, None,
     )["loss"]
-    assert vm_loss < 1e-4, f"VM reconstruction MAE too high: {vm_loss}" # VM MAE must be ~0 on every bus.
-    assert va_loss < 1e-4, f"VA reconstruction MAE too high: {va_loss}" # VA MAE must be ~0 on every bus
+    assert vm_loss < 1e-4, (
+        f"VM reconstruction MAE too high: {vm_loss}"
+    )  # VM MAE must be ~0 on every bus.
+    assert va_loss < 1e-4, (
+        f"VA reconstruction MAE too high: {va_loss}"
+    )  # VA MAE must be ~0 on every bus
 
     # Nodal injection (P_in / Q_in): the reconstructed net injection must match the ground-truth (gen - load) at every bus EXCEPT the reference/slack bus.
     # Slack bus is excluded because it absorbs total network losses and supplies the whole feeder(not included in the gen table)
@@ -102,7 +106,7 @@ def test_edge_flows():
     num_bus = data["bus"].x.size(0)
     gen_to_bus = data[("gen", "connected_to", "bus")].edge_index[1, :]
     gen_sum = scatter_add(
-        target_dict["gen"][:, PG_H], gen_to_bus, dim=0, dim_size=num_bus
+        target_dict["gen"][:, PG_H], gen_to_bus, dim=0, dim_size=num_bus,
     )
     tgt_P = gen_sum - target_dict["bus"][:, PD_H]
     tgt_Q = target_dict["bus"][:, QG_H] - target_dict["bus"][:, QD_H]
@@ -111,9 +115,6 @@ def test_edge_flows():
     q_in_mae = F.l1_loss(pred_dict["bus"][keep, QG_OUT], tgt_Q[keep])
     assert p_in_mae < 1e-4, f"P_in reconstruction MAE too high (off-slack): {p_in_mae}"
     assert q_in_mae < 1e-4, f"Q_in reconstruction MAE too high (off-slack): {q_in_mae}"
-
-
-
 
 
 """
@@ -214,7 +215,6 @@ def test_edge_flows():
 
     print("hi")
 """
-
 
 
 if __name__ == "__main__":

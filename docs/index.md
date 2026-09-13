@@ -15,8 +15,8 @@ introduced.
 
 ---
 
-This library is brought to you by the GridFM team to train, finetune and interact with a foundation model for the electric power grid. 
-This library contains specialised tasks for electricity distribution applications. 
+This library is brought to you by the GridFM team to train, finetune and interact with a foundation model for the electric power grid.
+This library contains specialised tasks for electricity distribution applications.
 
 ---
 

@@ -11,4 +11,3 @@ Do not report security vulnerabilities in a public issue. Follow the private
 reporting process in [SECURITY.md](SECURITY.md).
 
 To contribute a fix, follow [CONTRIBUTING.md](CONTRIBUTING.md).
-

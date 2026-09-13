@@ -64,7 +64,9 @@ def create_admittance_matrix(bus_params, edge_params, sn_mva=100):
     # otherwise the ids are assumed already positional and the map is the
     # identity (this branch is a no-op for contiguous 0..nb-1 data).
     if "bus" in bus_params.columns:
-        bus_id_to_pos = {int(orig_id): pos for pos, orig_id in enumerate(bus_params["bus"].values)}
+        bus_id_to_pos = {
+            int(orig_id): pos for pos, orig_id in enumerate(bus_params["bus"].values)
+        }
 
         def _map_bus_ids(series, ctx):
             mapped = series.map(bus_id_to_pos)
@@ -73,7 +75,7 @@ def create_admittance_matrix(bus_params, edge_params, sn_mva=100):
                 raise ValueError(
                     f"create_admittance_matrix: {ctx} references bus id(s) "
                     f"{missing} not present in bus_params "
-                    f"(n_bus={len(bus_id_to_pos)})."
+                    f"(n_bus={len(bus_id_to_pos)}).",
                 )
             return mapped.astype(np.int32).values
 

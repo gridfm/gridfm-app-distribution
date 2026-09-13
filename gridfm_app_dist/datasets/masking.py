@@ -15,7 +15,6 @@ from gridfm_app_dist.datasets.globals import (
     MIN_QG_H,
     MAX_QG_H,
     VN_KV,
-
     # Generator feature indices
     PG_H,
     MIN_PG,
@@ -23,7 +22,6 @@ from gridfm_app_dist.datasets.globals import (
     C0_H,
     C1_H,
     C2_H,
-
     # Edge feature indices
     P_E,
     Q_E,

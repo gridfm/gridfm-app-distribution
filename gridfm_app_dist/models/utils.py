@@ -25,6 +25,7 @@ from gridfm_app_dist.datasets.globals import (
 # In gridfm-graphkit, the physics decoders (PhysicsDecoderOPF / PF / SE) are registered in this module.
 # In gridfm-dist-app they have been moved to gridfm_app_dist/tasks/utils.py with the new PhysicsDecoderVLD decoder
 
+
 class ComputeBranchFlow(nn.Module):
     """Compute sending-end branch flows (Pf, Qf) for all branches."""
 

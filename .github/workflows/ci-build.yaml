@@ -54,7 +54,7 @@ jobs:
       steps:
       - name: Install git and git-lfs
         run: |
-          # Install LFS to upload large model safely 
+          # Install LFS to upload large model safely
           apt-get update
           apt-get install -y --no-install-recommends git git-lfs ca-certificates
           git lfs install

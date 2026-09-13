@@ -329,7 +329,7 @@ class GNS_heterogeneous(nn.Module):
                 h_bus = h_bus + self.physics_mlp(bus_residuals)
 
         #######################
-        #return {"bus": output_temp, "gen": gen_temp}
+        # return {"bus": output_temp, "gen": gen_temp}
         if self.is_vld_task:
             output_bus = torch.cat([output_temp, status_logit], dim=1)
         else:
@@ -337,6 +337,3 @@ class GNS_heterogeneous(nn.Module):
 
         return {"bus": output_bus, "gen": gen_temp}
         #####################
-
-
-

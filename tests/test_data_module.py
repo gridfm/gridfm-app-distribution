@@ -8,7 +8,7 @@ with open("tests/config/datamodule_test_base_config.yaml") as f:
     BASE_CONFIG = yaml.safe_load(f)
 
 
-@pytest.mark.parametrize("task",["VoltageLossDetection"])
+@pytest.mark.parametrize("task", ["VoltageLossDetection"])
 def test_dataloaders(task):
     cfg = copy.deepcopy(BASE_CONFIG)
 

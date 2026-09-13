@@ -47,8 +47,3 @@ For documentation generation and unit testing, install with the optional `dev` a
 ```
 pip install "gridfm-app-distribution[dev,test]"
 ```
-
-
-
-
-

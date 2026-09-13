@@ -9,8 +9,10 @@ import urllib.request
 import yaml
 import subprocess
 
+
 def execute_and_live_output(cmd) -> None:
     subprocess.run(cmd, text=True, shell=True, check=True)
+
 
 def _base_config() -> dict:
     """Download the default config from gridfm-app-distribution and apply common test parameters."""
@@ -36,7 +38,9 @@ def _base_config() -> dict:
     return config
 
 
-def generate_vld_test_data(config_path: str = "integrationtests/default_vld.yaml") -> None:
+def generate_vld_test_data(
+    config_path: str = "integrationtests/default_vld.yaml",
+) -> None:
     """Generate VLD test data for scenario_33radial.
     The app has a single task (VoltageLossDetection) and no OPF mode, so there
     is only one generator (the old PF/OPF split is gone).
@@ -46,6 +50,7 @@ def generate_vld_test_data(config_path: str = "integrationtests/default_vld.yaml
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
     print(f"VLD config written to {config_path}")
     execute_and_live_output(f"gridfm_app_dist_datakit generate --configs {config_path}")
+
 
 if __name__ == "__main__":
     generate_vld_test_data()
