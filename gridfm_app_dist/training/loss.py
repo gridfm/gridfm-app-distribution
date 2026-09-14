@@ -420,7 +420,9 @@ class VLDTopologyLoss(BaseLoss):
         self.on_vm_weight = getattr(loss_args, "on_vm_weight", 0.5)
         self.unreachable_l1_weight = getattr(loss_args, "unreachable_l1_weight", 1.0)
         self.topology_confidence_gamma = getattr(
-            loss_args, "topology_confidence_gamma", 10.0,
+            loss_args,
+            "topology_confidence_gamma",
+            10.0,
         )
 
     @staticmethod
@@ -673,17 +675,23 @@ class PBELoss(BaseLoss):
         # outputs (>= 6 columns) carry genuine PD/QD predictions.
         if pred_bus.size(1) > BUS_STATUS_TARGET:
             Pd = torch.where(
-                mask_bus[:, PD_H], pred_bus[:, PD_OUT], target_bus[:, PD_H],
+                mask_bus[:, PD_H],
+                pred_bus[:, PD_OUT],
+                target_bus[:, PD_H],
             )
             Qd = torch.where(
-                mask_bus[:, QD_H], pred_bus[:, QD_OUT], target_bus[:, QD_H],
+                mask_bus[:, QD_H],
+                pred_bus[:, QD_OUT],
+                target_bus[:, QD_H],
             )
         else:
             Pd = target_bus[:, PD_H]
             Qd = target_bus[:, QD_H]
         if pred_bus.size(1) > QG_OUT:
             Qg = torch.where(
-                mask_bus[:, QG_H], pred_bus[:, QG_OUT], target_bus[:, QG_H],
+                mask_bus[:, QG_H],
+                pred_bus[:, QG_OUT],
+                target_bus[:, QG_H],
             )
         else:
             Qg = target_bus[:, QG_H]

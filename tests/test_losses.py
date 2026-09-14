@@ -18,7 +18,8 @@ from gridfm_app_dist.models.utils import (
 def _load_energized_graph():
     """Load a deterministic FULLY-ENERGIZED processed graph and normalize it"""
     data_dict = torch.load(
-        "tests/data/scenario_33radial/processed/data_index_64.pt", weights_only=True,
+        "tests/data/scenario_33radial/processed/data_index_64.pt",
+        weights_only=True,
     )
     data = HeteroData.from_dict(data_dict)
     node_stats = torch.load(
@@ -67,7 +68,8 @@ def test_pbe_loss_zero_with_real_data():
             batch.y_dict["bus"][:, VM_H],  # VM_OUT = 0
             batch.y_dict["bus"][:, VA_H],  # VA_OUT = 1
             batch.y_dict["bus"][
-                :, PG_BUS_H,
+                :,
+                PG_BUS_H,
             ],  # PG_OUT = 2  (net bus Pg, same base as Qg)
             batch.y_dict["bus"][:, QG_H],  # QG_OUT = 3
         ],

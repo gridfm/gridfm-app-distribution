@@ -83,10 +83,18 @@ def test_edge_flows():
     }
 
     vm_loss = LossPerDim(NestedNamespace(**{"loss_str": "MAE", "dim": "VM"}), None)(
-        pred_dict, target_dict, edge_index, None, None,
+        pred_dict,
+        target_dict,
+        edge_index,
+        None,
+        None,
     )["loss"]
     va_loss = LossPerDim(NestedNamespace(**{"loss_str": "MAE", "dim": "VA"}), None)(
-        pred_dict, target_dict, edge_index, None, None,
+        pred_dict,
+        target_dict,
+        edge_index,
+        None,
+        None,
     )["loss"]
     assert vm_loss < 1e-4, (
         f"VM reconstruction MAE too high: {vm_loss}"
@@ -106,7 +114,10 @@ def test_edge_flows():
     num_bus = data["bus"].x.size(0)
     gen_to_bus = data[("gen", "connected_to", "bus")].edge_index[1, :]
     gen_sum = scatter_add(
-        target_dict["gen"][:, PG_H], gen_to_bus, dim=0, dim_size=num_bus,
+        target_dict["gen"][:, PG_H],
+        gen_to_bus,
+        dim=0,
+        dim_size=num_bus,
     )
     tgt_P = gen_sum - target_dict["bus"][:, PD_H]
     tgt_Q = target_dict["bus"][:, QG_H] - target_dict["bus"][:, QD_H]

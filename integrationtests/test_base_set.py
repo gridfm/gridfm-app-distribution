@@ -45,7 +45,8 @@ def _cpu_model() -> str:
     if platform.system() == "Darwin":
         try:
             return subprocess.check_output(
-                ["sysctl", "-n", "machdep.cpu.brand_string"], text=True,
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                text=True,
             ).strip()
         except (OSError, subprocess.CalledProcessError):
             pass
@@ -107,7 +108,8 @@ def warn_on_fingerprint_mismatch(saved: dict, current: dict) -> None:
 # Calibration baseline I/O
 # ----------------------------------------------------------------------------
 DEFAULT_BASELINE_PATH = os.path.join(
-    os.path.dirname(__file__), "calibration_baseline.json",
+    os.path.dirname(__file__),
+    "calibration_baseline.json",
 )
 
 
@@ -354,7 +356,10 @@ def test_train_vld(cleanup_test_artifacts, calibrate_runs, ci_level, calibrate_p
     if calibrate_runs > 0:
         bounds = compute_bounds(all_runs, VLD_METRIC_KEYS, ci_level, calibrate_pad)
         print_calibration_stats(
-            all_runs, VLD_METRIC_KEYS, bounds, confidence_interval=ci_level,
+            all_runs,
+            VLD_METRIC_KEYS,
+            bounds,
+            confidence_interval=ci_level,
         )
         write_baseline("vld", bounds)
         return
