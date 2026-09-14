@@ -2,7 +2,7 @@ seed: 42
 
 data:
   networks: ["scenario_33radial"]   # Networks loaded as separate folders
-  scenarios: [100]                # Number of scenarios loaded from the CSV files
+  scenarios: [10]                # Number of scenarios loaded from the CSV files
   normalization: "HeteroDataMVANormalizer"  # data normalization to pu on MVA base
   baseMVA: 100                      # Base MVA for normalization
   mask_value: 0.0                   # Initial value for masked parameters

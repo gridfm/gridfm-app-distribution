@@ -2,7 +2,7 @@ seed: 42
 
 data:
   networks: ["scenario_33radial"]   # Networks loaded as separate folders
-  scenarios: [100]                # Number of scenarios loaded from the CSV files
+  scenarios: [10]                # Number of scenarios loaded from the CSV files
   normalization: "HeteroDataMVANormalizer"  # data normalization to pu on MVA base
   baseMVA: 100                      # Base MVA for normalization
   mask_value: 0.0                   # Initial value for masked parameters
@@ -12,10 +12,10 @@ data:
 
 model:
   type: GNS_heterogeneous           # was GPSTransformer (not available in new repo)
-  attention_head: 2
+  attention_head: 8
   dropout: 0.1
   edge_dim: 13                      # Additional edge features BRANCH_BASE_STATUS_E(11) + BRANCH_CONT_E(12)
-  hidden_size: 16
+  hidden_size: 256
   input_bus_dim: 17                 # Additional bus features + BUS_BASE_STATUS_H(15) + BUS_CONT_H(16)
   input_gen_dim: 6                  # Additional generator node-type feature dim
   output_bus_dim: 5
@@ -26,7 +26,7 @@ training:
   batch_size: 1
   epochs: 1
   losses: ["MaskedMSE", "PBE", "VLDTopologyLoss"]
-  loss_weights: [0.05, 0.55, 0.40]
+  loss_weights: [0.05, 0.15, 0.80]
 
 
   loss_args: # parameters for tuning the loss functions
