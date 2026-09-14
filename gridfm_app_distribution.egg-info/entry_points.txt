@@ -1,2 +1,0 @@
-[console_scripts]
-gridfm_app_dist = gridfm_app_dist.__main__:main
