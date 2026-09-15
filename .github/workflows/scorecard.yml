@@ -31,6 +31,9 @@ jobs:
       # Uncomment the permissions below if installing in a private repository.
       contents: read
       actions: read
+      checks: read
+      issues: read
+      pull-requests: read 
 
     steps:
       - name: "Checkout code"
