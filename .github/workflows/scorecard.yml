@@ -31,6 +31,8 @@ jobs:
       # Uncomment the permissions below if installing in a private repository.
       contents: read
       actions: read
+      checks: read # new
+      issues: read # new 
 
 
     steps:
@@ -57,7 +59,7 @@ jobs:
           # For private repositories:
           #   - `publish_results` will always be set to `false`, regardless
           #     of the value entered here.
-          publish_results: true
+          publish_results: false
 
           # (Optional) Uncomment file_mode if you have a .gitattributes with files marked export-ignore
           file_mode: git
