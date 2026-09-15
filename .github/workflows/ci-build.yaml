@@ -135,6 +135,12 @@ jobs:
   codeql:
     name: CodeQL (Python)
     runs-on: ubuntu-latest
+
+    permissions:
+      actions: read # new
+      contents: read # new
+      security-events: write # new
+
     steps:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v3
