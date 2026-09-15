@@ -77,7 +77,7 @@ Loss checks on topology target generation and Vm weighting.
 
 ## Contribution Plan
 
-- Primary contributor(s): Kisuule Mikka 
+- Primary contributor: Kisuule Mikka 
 - Supervisor: Ignacio Hernando-Gil
 - Organization: INESC TEC
 - Expected level of maintainer support needed: Medium (available)
