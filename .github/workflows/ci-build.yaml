@@ -81,12 +81,7 @@ jobs:
         env:
           MLFLOW_ALLOW_FILE_STORE: "true"
         run: |
-          free -h
-          pytest --cov=. tests/ -x -v --durations=20
-      
-      - name: Show memory after tests
-      if: always()
-      run: free -h
+          pytest --cov=. tests/
 
   detect_secrets:
     name: IBM detect-secrets
