@@ -135,26 +135,17 @@ jobs:
   codeql:
     name: CodeQL (Python)
     runs-on: ubuntu-latest
-    permissions:
-      actions: read # added
-      contents: read # added
-      security-events: write
     steps:
-      - name: Checkout repository # added
       - uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-      - uses: github/codeql-action/init@v4 # replaced github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v3
         with:
           languages: python
-
-      - name: Autobuild
-      - uses: github/codeql-action/autobuild@v4 # replaced github/codeql-action/autobuild@v3
-
-      - name: Analyze
-      - uses: github/codeql-action/analyze@v4 # replaced github/codeql-action/analyze@v3
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
         with:
           category: "/language:python"
+
+
 
 
   #semgrep:
@@ -271,7 +262,7 @@ jobs:
             severity: 'HIGH,CRITICAL'
 
         - name: Upload SARIF to Code Scanning
-          uses: github/codeql-action/upload-sarif@v3 # replaced github/codeql-action/upload-sarif@v3
+          uses: github/codeql-action/upload-sarif@v3
           if: always() # Upload results even if vulnerabilities are found
           with:
             sarif_file: 'trivy-results.sarif'
