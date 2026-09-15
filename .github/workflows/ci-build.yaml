@@ -250,30 +250,28 @@ jobs:
   trivy_repo:
       name: Trivy (repo scan)
       runs-on: ubuntu-latest
-
       permissions:
         actions: read #new
         contents: read #new
         security-events: write
-
       steps:
         - name: Checkout repository
           uses: actions/checkout@v4
           with:
             lfs: false # Do not add the model to the scan as it is 1.4GB
 
-        - name: Run Trivy vulnerability scanner
-
-          uses: aquasecurity/trivy-action@master # We use the official container-based action to avoid binary install issues
+        - name: Run Trivy vulnerability scanner in repo mode
+          # We use the official container-based action to avoid binary install issues
+          uses: aquasecurity/trivy-action@master
           with:
-            scan-type: fs # replaced 'fs'
+            scan-type: 'fs'
             ignore-unfixed: true
-            format: sarif # replaced 'sarif'
-            output: trivy-results.sarif # replaced 'trivy-results.sarif'
-            severity: HIGH,CRITICAL # replaced 'HIGH,CRITICAL'
+            format: 'sarif'
+            output: 'trivy-results.sarif'
+            severity: 'HIGH,CRITICAL'
 
         - name: Upload SARIF to Code Scanning
-          uses: github/codeql-action/upload-sarif@v4 # replaced github/codeql-action/upload-sarif@v3
+          uses: github/codeql-action/upload-sarif@v3 # replaced github/codeql-action/upload-sarif@v3
           if: always() # Upload results even if vulnerabilities are found
           with:
             sarif_file: 'trivy-results.sarif'
