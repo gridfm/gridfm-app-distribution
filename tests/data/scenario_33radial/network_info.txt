@@ -1,0 +1,16 @@
+time taken (s): 9.317033290863037
+network_name: case33radial
+contingency level: 1
+number_scenarios: 71
+number_batches: 1
+total_buses: 33
+total_lines: 35
+total_generators: 4
+base_mva: 100.0
+base_voltage_kv: 12.66
+contingency_components:
+  buses: 32
+  lines: 35
+  generators: 4
+  trafos: 0
+  switches: 0

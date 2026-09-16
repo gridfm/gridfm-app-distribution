@@ -5,7 +5,7 @@ The goal is to predict post-contingency bus energization status while preserving
 This task achieves prediction based load flow simulations in reliability analyses where network contingencies are simulated to identify the customers who are interrupted during each grid failure.
 This task also guides the model prediction to be topology-aware by guiding voltage predictions for ON buses towards the reconstructed voltage and towards zero for OFF buses.
 
-The purpose of this task to GridFM users is to enforce topology-awareness in distribution networks during contigency analyses. This task is tailored for distribution networks with multiple failures in MV and LV parts. 
+The purpose of this task to GridFM users is to enforce topology-awareness in distribution networks during contigency analyses. This task is tailored for distribution networks with multiple failures in MV and LV parts.
 
 ---
 

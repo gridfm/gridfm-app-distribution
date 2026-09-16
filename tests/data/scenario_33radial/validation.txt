@@ -1,0 +1,6 @@
+scenarios: 71
+buses_per_scenario: 33
+branches_per_scenario: 35
+gens_total_rows: 284
+off_branches_with_nonzero_admittance: 723
+off_buses_with_nonzero_voltage: 0
