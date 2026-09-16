@@ -37,8 +37,26 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           token: ${{ secrets.SCORECARD_TOKEN }} # Added token to this step
-          persist-credentials: true # changed so that leaves the token in the local Git configuration so that Scorecard can perform authenticated Git operations
+          persist-credentials: false # changed so that leaves the token in the local Git configuration so that Scorecard can perform authenticated Git operations
           fetch-depth: 0 # added to provides complete history, which is required for commit-based Scorecard checks
+
+
+
+      # Add new step to authenticate token before scorecard
+      - name: Configure Git authentication for Scorecard
+        shell: bash
+        env:
+          SCORECARD_TOKEN: ${{ secrets.SCORECARD_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${SCORECARD_TOKEN}" || {
+            echo "::error::SCORECARD_TOKEN is empty"
+            exit 1
+          }
+          git remote set-url origin \
+            "https://x-access-token:${SCORECARD_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git ls-remote origin HEAD >/dev/null
+          echo "Authenticated Git access confirmed"
 
 
 
