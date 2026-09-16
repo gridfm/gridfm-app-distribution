@@ -8,19 +8,38 @@ data:
   mask_value: 0.0                   # Initial value for masked parameters
   val_ratio: 0.1                    # ratio of data for validation
   test_ratio: 0.1                   # ratio of data for testing
-  workers: 4
+  # Load data in-process. Any workers > 0 makes the datamodule use the
+  # "forkserver" start method, so every worker is a fresh interpreter that
+  # imports torch again instead of sharing the parent's pages copy-on-write
+  # (~0.65 GiB each). main_cli() keeps train + val loaders alive
+  # (persistent_workers) while trainer.test() spins up a third set, so 8-12 such
+  # workers coexist: ~3.6 GiB before any model. Two vCPUs would not benefit from
+  # parallel loading anyway.
+  workers: 0
 
+# Smoke-test capacity, deliberately NOT the production shape. These tests only
+# assert that the pipeline runs, so width and depth are the knobs to shrink.
+# hidden_size 256 / num_layers 8 / attention_head 8 builds a 365M-parameter
+# model: after layer 0 every node vector is hidden_size * attention_head = 2048
+# wide, and each of the 3 relations per layer carries four 2048x2048 TransformerConv
+# projections. That is 1.36 GiB of weights, and Adam adds gradients plus two
+# moment buffers on the first optimizer step -> 5.44 GiB, which OOM-kills the
+# 7 GB GitHub-hosted runner (exit 137) partway into test_pipeline.py.
+# 32 / 2 / 2 is ~0.2M parameters (~3 MiB with optimizer state).
+# The input/output dims below are fixed by the data and must not be touched.
+# tests/models/dummy_model.pt matches THIS shape; regenerate it with
+# tests/util/make_dummy_model.py if any of the three capacity knobs change.
 model:
   type: GNS_heterogeneous           # was GPSTransformer (not available in new repo)
-  attention_head: 8
+  attention_head: 2
   dropout: 0.1
   edge_dim: 13                      # Additional edge features BRANCH_BASE_STATUS_E(11) + BRANCH_CONT_E(12)
-  hidden_size: 256
+  hidden_size: 32
   input_bus_dim: 17                 # Additional bus features + BUS_BASE_STATUS_H(15) + BUS_CONT_H(16)
   input_gen_dim: 6                  # Additional generator node-type feature dim
   output_bus_dim: 5
   output_gen_dim: 1
-  num_layers: 8
+  num_layers: 2
 
 training:
   batch_size: 1
