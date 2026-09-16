@@ -24,21 +24,37 @@ jobs:
     # `publish_results: true` only works when run from the default branch. conditional can be removed if disabled.
     if: github.event.repository.default_branch == github.ref_name || github.event_name == 'pull_request'
     permissions:
-      # Needed to upload the results to code-scanning dashboard.
-      security-events: write
-      # Needed to publish results and get a badge (see publish_results below).
-      id-token: write
-      # Uncomment the permissions below if installing in a private repository.
-      contents: read
-      actions: read
+      security-events: write # Needed to upload the results to code-scanning dashboard.
+      id-token: write # Needed to publish results and get a badge (see publish_results below).
+      contents: read # Uncomment the permissions below if installing in a private repository.
+      actions: read # Uncomment the permissions below if installing in a private repository.
       checks: read # new
       issues: read # new
+      pull-requests: read # new
 
     steps:
       - name: "Checkout code"
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+
+
+          
+
+      - name: Verify Scorecard secret is available
+        shell: bash
+        env:
+          SCORECARD_TOKEN: ${{ secrets.SCORECARD_TOKEN }}
+        run: |
+          if [ -z "${SCORECARD_TOKEN}" ]; then
+            echo "::error::SCORECARD_TOKEN is empty or unavailable"
+            exit 1
+          fi
+
+          echo "SCORECARD_TOKEN is present"
+      
+      
+      
 
       - name: "Run analysis"
         uses: ossf/scorecard-action@f49aabe0b5af0936a0987cfb85d86b75731b0186 # v2.4.1
