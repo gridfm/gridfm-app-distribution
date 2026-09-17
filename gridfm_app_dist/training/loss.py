@@ -37,6 +37,8 @@ from gridfm_app_dist.datasets.globals import (
     #####################
     # Indices of features of the VLD task
     # Bus feature indices
+    REF_H,
+    PV_H,
     BUS_BASE_STATUS_H,
     BUS_CONT_H,
     # B_ON,
@@ -422,8 +424,36 @@ class VLDTopologyLoss(BaseLoss):
         self.topology_confidence_gamma = getattr(
             loss_args,
             "topology_confidence_gamma",
-            10.0,
+            0.0,
         )
+        # Which buses count as energisation sources for the reachability BFS.
+        #   "ref"         only the slack / ext_grid buses (REF_H). Correct for
+        #                 IEEE-1547-style DG that trips on loss of mains.
+        #   "ref_and_gen" REF_H or PV_H, i.e. islands with local generation are
+        #                 treated as energised. Use only for grid-forming DG or
+        #                 intentional-islanding studies.
+        self.reachability_sources = getattr(loss_args, "reachability_sources", "ref")
+        if self.reachability_sources not in ("ref", "ref_and_gen"):
+            raise ValueError(
+                "loss.reachability_sources must be 'ref' or 'ref_and_gen', "
+                f"got {self.reachability_sources!r}.",
+            )
+        # Up-weight the de-energised class in the topology BCE. With correct
+        # labels the de-energised buses are a minority (severely so on large
+        # meshed networks), and an unweighted BCE is minimised by predicting
+        # "energised" everywhere. "auto" balances per batch; 1.0 disables.
+        self.unreachable_pos_weight = getattr(
+            loss_args, "unreachable_pos_weight", "auto",
+        )
+        if self.unreachable_pos_weight != "auto":
+            try:
+                self.unreachable_pos_weight = float(self.unreachable_pos_weight)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "loss.unreachable_pos_weight must be 'auto' or a number, got "
+                    f"{self.unreachable_pos_weight!r}.",
+                ) from None
+        self.max_pos_weight = float(getattr(loss_args, "max_pos_weight", 50.0))
 
     @staticmethod
     def _build_graph_reachability(
@@ -433,13 +463,14 @@ class VLDTopologyLoss(BaseLoss):
         bus_x,
         device,
         threshold=0.5,
+        sources="ref",
     ):
         """
         Build hard reachability labels from base-status and contingency indicators.
 
-        A bus is considered initially available if base_status is on and it is not
-        directly hit by contingency. A branch is traversable if base branch status
-        is on and it is not hit by contingency.
+        A bus is energised iff (a) it is itself available - base status on and not
+        directly hit by a contingency - AND (b) there is a path of available
+        branches through available buses from an energisation SOURCE to it.
         """
         bus_base = bus_x[:, BUS_BASE_STATUS_H] > threshold
         bus_hit = bus_x[:, BUS_CONT_H] > threshold
@@ -451,20 +482,33 @@ class VLDTopologyLoss(BaseLoss):
         branch_available = branch_base & (~branch_hit)
 
         reachable = torch.zeros(num_bus, dtype=torch.bool, device=device)
-
-        # Seeds: all buses that remain available after direct contingency.
-        seed_nodes = torch.where(bus_available)[0]
-        if seed_nodes.numel() == 0:
+        is_source = bus_x[:, REF_H] > threshold
+        if sources == "ref_and_gen":
+            is_source = is_source | (bus_x[:, PV_H] > threshold)
+        seeds = bus_available & is_source
+        if not bool(seeds.any()):
+            # Whole-graph blackout: nothing is energised. Returning all-zero is
+            # correct, not a degenerate fallback.
             return reachable.float(), bus_available.float()
 
-        reachable[seed_nodes] = True
+        reachable = reachable | seeds
 
-        changed = True
-        while changed:
-            prev = reachable.clone()
-            active_edges = branch_available & reachable[src]
-            reachable[dst[active_edges]] = True
-            changed = not torch.equal(prev, reachable)
+        # Symmetrise: do not depend on both directions being present in the data.
+        e_src = torch.cat([src, dst])
+        e_dst = torch.cat([dst, src])
+        e_ok = torch.cat([branch_available, branch_available])
+
+        for _ in range(num_bus):
+            active_edges = e_ok & reachable[e_src]
+            frontier = torch.zeros_like(reachable)
+            frontier[e_dst[active_edges]] = True
+            # A bus that is itself out of service cannot become energised, and
+            # cannot pass energy on.
+            frontier = frontier & bus_available
+            updated = reachable | frontier
+            if torch.equal(updated, reachable):
+                break
+            reachable = updated
 
         return reachable.float(), bus_available.float()
 
@@ -506,6 +550,7 @@ class VLDTopologyLoss(BaseLoss):
             bus_x=bus_x,
             device=device,
             threshold=self.input_state_threshold,
+            sources=self.reachability_sources,
         )
 
         status_logit = bus_pred[:, BUS_STATUS_LOGIT_OUT]
@@ -515,22 +560,62 @@ class VLDTopologyLoss(BaseLoss):
         target_vm = bus_target[:, VM_H].float()
         pred_vm = bus_pred[:, VM_OUT].float()
 
-        topology_confidence = torch.exp(
-            -self.topology_confidence_gamma * torch.abs(bus_available - topo_target),
+        # Per-sample weights on the topology BCE.
+        if self.topology_confidence_gamma:
+            topology_confidence = torch.exp(
+                -self.topology_confidence_gamma
+                * torch.abs(bus_available - topo_target),
+            )
+        else:
+            topology_confidence = torch.ones_like(topo_target)
+
+        # Class balance instead. De-energised buses are the minority class and
+        # the one that matters; an unweighted BCE over correct labels is very
+        # nearly minimised by predicting "energised" everywhere.
+        n_off = (topo_target < 0.5).sum()
+        n_on = (topo_target >= 0.5).sum()
+        if self.unreachable_pos_weight == "auto":
+            if n_off > 0:
+                off_weight = (n_on.float() / n_off.float()).clamp(
+                    1.0,
+                    self.max_pos_weight,
+                )
+            else:
+                off_weight = torch.ones((), device=device)
+        else:
+            off_weight = torch.as_tensor(
+                float(self.unreachable_pos_weight),
+                device=device,
+            ).clamp_min(1.0)
+        class_weight = torch.where(
+            topo_target < 0.5,
+            off_weight.expand_as(topo_target),
+            torch.ones_like(topo_target),
         )
+        topology_weights = topology_confidence * class_weight
 
         topology_bce_raw = F.binary_cross_entropy_with_logits(
             status_logit,
             topo_target,
             reduction="none",
         )
-        topology_bce = (topology_confidence * topology_bce_raw).mean()
-
-        target_anchor_bce = F.binary_cross_entropy_with_logits(
-            status_logit,
-            target_status,
-            reduction="mean",
+        topology_bce = (topology_weights * topology_bce_raw).sum() / (
+            topology_weights.sum().clamp_min(1e-8)
         )
+
+        anchor_weights = torch.where(
+            target_status < 0.5,
+            off_weight.expand_as(target_status),
+            torch.ones_like(target_status),
+        )
+        target_anchor_bce = (
+            anchor_weights
+            * F.binary_cross_entropy_with_logits(
+                status_logit,
+                target_status,
+                reduction="none",
+            )
+        ).sum() / anchor_weights.sum().clamp_min(1e-8)
 
         unreachable_mask = (topo_target < 0.5).float()
         reachable_mask = (topo_target >= 0.5).float()
@@ -543,10 +628,9 @@ class VLDTopologyLoss(BaseLoss):
         ).sum() / unreachable_mask.sum().clamp_min(1.0)
         off_vm_loss = off_vm_l2 + self.unreachable_l1_weight * off_vm_l1
 
-        on_vm_sq = ((pred_vm - target_vm) ** 2) * reachable_mask * status_prob.detach()
-        on_vm_loss = on_vm_sq.sum() / (
-            reachable_mask * status_prob.detach()
-        ).sum().clamp_min(1.0)
+        on_vm_w = reachable_mask * status_prob.detach()
+        on_vm_sq = ((pred_vm - target_vm) ** 2) * on_vm_w
+        on_vm_loss = on_vm_sq.sum() / on_vm_w.sum().clamp_min(1e-8)
 
         total_loss = (
             self.topology_weight * topology_bce
@@ -559,6 +643,26 @@ class VLDTopologyLoss(BaseLoss):
         topo_acc = (pred_status == topo_target).float().mean()
         target_acc = (pred_status == target_status).float().mean()
 
+        # Accuracy on this task is dominated by the energised majority class and
+        # reads ~99% for a model that never predicts an outage. Report recall and
+        # precision on the DE-ENERGISED class, which is what VLD is for.
+        with torch.no_grad():
+            off_true = target_status < 0.5
+            off_pred = pred_status < 0.5
+            tp = (off_true & off_pred).sum().float()
+            recall_off = tp / off_true.sum().clamp_min(1).float()
+            precision_off = tp / off_pred.sum().clamp_min(1).float()
+            f1_off = (2 * precision_off * recall_off) / (
+                precision_off + recall_off
+            ).clamp_min(1e-8)
+            # Data-integrity check: with a correct BFS, the derived reachability
+            # label should agree with the dataset's own bus_status_target. A
+            # persistent disagreement means one of the two is wrong - most likely
+            # the contingency flags or the source definition - and it is worth
+            # seeing on the training curves rather than discovering later.
+            topo_vs_target = (topo_target != target_status).float().mean()
+            off_rate = (topo_target < 0.5).float().mean()
+
         return {
             "loss": total_loss,
             "VLD Topology BCE": topology_bce.detach(),
@@ -567,6 +671,12 @@ class VLDTopologyLoss(BaseLoss):
             "VLD On Vm Loss": on_vm_loss.detach(),
             "VLD Topology Accuracy": topo_acc.detach(),
             "VLD Target Accuracy": target_acc.detach(),
+            "VLD Off Recall": recall_off,
+            "VLD Off Precision": precision_off,
+            "VLD Off F1": f1_off,
+            "VLD Off Rate (labels)": off_rate,
+            "VLD Topo-vs-Target Disagreement": topo_vs_target,
+            "VLD Off Class Weight": off_weight.detach().float(),
         }
 
 
