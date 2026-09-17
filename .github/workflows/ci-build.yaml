@@ -81,6 +81,7 @@ jobs:
         env:
           MLFLOW_ALLOW_FILE_STORE: "true"
         run: |
+          python tests/util/make_dummy_model.py
           pytest --cov=. tests/
 
   detect_secrets:
