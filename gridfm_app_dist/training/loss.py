@@ -443,7 +443,9 @@ class VLDTopologyLoss(BaseLoss):
         # meshed networks), and an unweighted BCE is minimised by predicting
         # "energised" everywhere. "auto" balances per batch; 1.0 disables.
         self.unreachable_pos_weight = getattr(
-            loss_args, "unreachable_pos_weight", "auto",
+            loss_args,
+            "unreachable_pos_weight",
+            "auto",
         )
         if self.unreachable_pos_weight != "auto":
             try:

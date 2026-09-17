@@ -402,9 +402,7 @@ class GNS_heterogeneous(nn.Module):
         # threshold comparisons when building hard reachability labels, so no
         # gradient is required. Detaching keeps a stale autograd graph from
         # being reachable from the module between steps.
-        self.latest_x_dict = {
-            key: value.detach() for key, value in x_dict.items()
-        }
+        self.latest_x_dict = {key: value.detach() for key, value in x_dict.items()}
         ####################
 
         # 1) initial projections
