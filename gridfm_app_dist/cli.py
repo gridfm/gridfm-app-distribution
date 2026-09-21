@@ -122,22 +122,23 @@ def get_training_callbacks(args):
 
     return [early_stop_callback, save_best_model_callback, checkpoint_callback]
 
+
 def _num_nodes() -> int:
     """Node count for L.Trainer, or 1 when srun did not launch this process.
-   +
-   +    Lightning defaults num_nodes=1, so SLURMEnvironment.validate_settings
-   +    rejects any multi-node allocation. The value must also be *correct*, not
-   +    merely accepted: DDPStrategy.distributed_sampler_kwargs derives
-   +    num_replicas from num_nodes * num_processes, so a wrong value silently
-   +    mis-shards the dataset instead of raising.
-   +
-   +    Gated on SLURM_NTASKS, which is the same signal Lightning itself uses in
-   +    lightning.fabric.plugins.environments.slurm._is_srun_used. SLURM_NNODES is
-   +    also set inside an `salloc` shell, where the app may be started WITHOUT
-   +    srun; trusting it there would make Lightning wait for ranks that never
-   +    arrive. Outside SLURM this returns 1, i.e. exactly Lightning's default, so
-   +    laptop, workstation and CI runs are unaffected.
-   +    """
+    +
+      Lightning defaults num_nodes=1, so SLURMEnvironment.validate_settings
+      rejects any multi-node allocation. The value must also be *correct*, not
+      merely accepted: DDPStrategy.distributed_sampler_kwargs derives
+      num_replicas from num_nodes * num_processes, so a wrong value silently
+      mis-shards the dataset instead of raising.
+    +
+      Gated on SLURM_NTASKS, which is the same signal Lightning itself uses in
+      lightning.fabric.plugins.environments.slurm._is_srun_used. SLURM_NNODES is
+      also set inside an `salloc` shell, where the app may be started WITHOUT
+      srun; trusting it there would make Lightning wait for ranks that never
+      arrive. Outside SLURM this returns 1, i.e. exactly Lightning's default, so
+      laptop, workstation and CI runs are unaffected.
+    +"""
     if not os.environ.get("SLURM_NTASKS"):
         return 1
     try:
@@ -145,14 +146,48 @@ def _num_nodes() -> int:
     except ValueError:
         return 1
 
+def _global_rank() -> int:
+    """This process's global rank, readable BEFORE torch.distributed exists.
+
+    The MLflow logger has to be built before the Trainer, so neither
+    trainer.global_rank nor torch.distributed.get_rank() is available yet.
+    SLURM_PROCID is set per task by srun; RANK is the torchrun equivalent.
+    """
+    for var in ("SLURM_PROCID", "RANK"):
+        value = os.environ.get(var)
+        if value:
+            try:
+                return int(value)
+            except ValueError:
+                pass
+    return 0
+
 def main_cli(args):
     if getattr(args, "tf32", False):
         torch.set_float32_matmul_precision("high")  # enables TF32 on Ampere+ GPUs
 
-    logger = MLFlowLogger(
-        save_dir=args.log_dir,
-        experiment_name=args.exp_name,
-        run_name=args.run_name,
+    # MLFlowLogger.__init__ eagerly constructs MlflowClient -> FileStore ->
+    # _create_default_experiment(), and that path is NOT rank_zero_only. With
+    # 16 ranks starting at once the losers die with
+    # Exception: Yaml file './mlruns/.../0/meta.yaml' exists as ...
+    # Lightning already guards every WRITE through the logger (`experiment` is
+    # @rank_zero_experiment, log_metrics/log_hyperparams are @rank_zero_only),
+    # so construction is the only unsafe part. Rather than make the race
+    # narrower, give the store exactly one owner: rank 0. Non-zero ranks pass
+    # logger=False, which disables logging without substituting a default one
+    # (logger=None would create a TensorBoard/CSV logger instead).
+    # Safe for checkpointing: ModelCheckpoint.setup resolves dirpath then calls
+    # trainer.strategy.broadcast(dirpath), so every rank adopts rank 0's path
+    # even though only rank 0 has a logger to derive it from.
+    rank = _global_rank()
+    logger = (
+        MLFlowLogger(
+            save_dir=args.log_dir,
+            experiment_name=args.exp_name,
+            run_name=args.run_name,
+        )
+        if rank == 0
+        else False
     )
 
     with open(args.config, "r") as f:
@@ -224,6 +259,15 @@ def main_cli(args):
     if args.command == "train" or args.command == "finetune":
         trainer.fit(model=model, datamodule=litGrid)
 
+    # Past this point everything is single-process and needs `logger`:
+    # artifacts_dir reads logger.save_dir/.experiment_id/.run_id, which on a
+    # non-zero rank would be False.save_dir -> AttributeError. The test and
+    # predict Trainers are already devices=1, num_nodes=1, so they are meant
+    # to run once, not on all nodes. fit() has returned, so DDP is torn down.
+    if rank != 0:
+        return
+        
+        
     if args.command != "predict":
         test_trainer = L.Trainer(
             logger=logger,

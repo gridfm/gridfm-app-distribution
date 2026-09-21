@@ -393,6 +393,7 @@ class LossPerDim(BaseLoss):
 # VLD (Voltage Loss Detection) task loss
 # ---------------------------------------------------------------------------
 
+
 @LOSS_REGISTRY.register("VLDTopologyLoss")
 class VLDTopologyLoss(BaseLoss):
     """
