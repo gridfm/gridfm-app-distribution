@@ -122,6 +122,28 @@ def get_training_callbacks(args):
 
     return [early_stop_callback, save_best_model_callback, checkpoint_callback]
 
+def _num_nodes() -> int:
+    """Node count for L.Trainer, or 1 when srun did not launch this process.
+   +
+   +    Lightning defaults num_nodes=1, so SLURMEnvironment.validate_settings
+   +    rejects any multi-node allocation. The value must also be *correct*, not
+   +    merely accepted: DDPStrategy.distributed_sampler_kwargs derives
+   +    num_replicas from num_nodes * num_processes, so a wrong value silently
+   +    mis-shards the dataset instead of raising.
+   +
+   +    Gated on SLURM_NTASKS, which is the same signal Lightning itself uses in
+   +    lightning.fabric.plugins.environments.slurm._is_srun_used. SLURM_NNODES is
+   +    also set inside an `salloc` shell, where the app may be started WITHOUT
+   +    srun; trusting it there would make Lightning wait for ranks that never
+   +    arrive. Outside SLURM this returns 1, i.e. exactly Lightning's default, so
+   +    laptop, workstation and CI runs are unaffected.
+   +    """
+    if not os.environ.get("SLURM_NTASKS"):
+        return 1
+    try:
+        return int(os.environ.get("SLURM_NNODES") or 1)
+    except ValueError:
+        return 1
 
 def main_cli(args):
     if getattr(args, "tf32", False):
@@ -190,6 +212,7 @@ def main_cli(args):
         logger=logger,
         accelerator=config_args.training.accelerator,
         devices=config_args.training.devices,
+        num_nodes=_num_nodes(),
         strategy=config_args.training.strategy,
         log_every_n_steps=1000,
         default_root_dir=args.log_dir,

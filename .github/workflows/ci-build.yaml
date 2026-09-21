@@ -81,7 +81,7 @@ jobs:
         env:
           MLFLOW_ALLOW_FILE_STORE: "true"
         run: |
-          python tests/util/make_dummy_model.py
+          python tests/util/make_dummy_model.py # create the dummy model using the test_datamodule config 
           pytest --cov=. tests/
 
   detect_secrets:

@@ -392,12 +392,6 @@ class LossPerDim(BaseLoss):
 # ---------------------------------------------------------------------------
 # VLD (Voltage Loss Detection) task loss
 # ---------------------------------------------------------------------------
-# NOTE (integration fix): the registry decorator was previously attached to the
-# helper ``_node_pred_tensor`` below, which (a) registered the wrong object and
-# (b) would have collided with the class decorator, raising KeyError at import
-# because Registry.register forbids duplicate names. The decorator now lives on
-# the working VLDTopologyLoss class further down.
-
 
 @LOSS_REGISTRY.register("VLDTopologyLoss")
 class VLDTopologyLoss(BaseLoss):
