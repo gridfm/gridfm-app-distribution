@@ -146,6 +146,7 @@ def _num_nodes() -> int:
     except ValueError:
         return 1
 
+
 def _global_rank() -> int:
     """This process's global rank, readable BEFORE torch.distributed exists.
 
@@ -161,6 +162,7 @@ def _global_rank() -> int:
             except ValueError:
                 pass
     return 0
+
 
 def main_cli(args):
     if getattr(args, "tf32", False):
@@ -266,8 +268,7 @@ def main_cli(args):
     # to run once, not on all nodes. fit() has returned, so DDP is torn down.
     if rank != 0:
         return
-        
-        
+
     if args.command != "predict":
         test_trainer = L.Trainer(
             logger=logger,
