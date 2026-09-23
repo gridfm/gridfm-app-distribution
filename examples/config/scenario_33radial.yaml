@@ -15,19 +15,19 @@ model:
   attention_head: 8
   dropout: 0.1
   edge_dim: 13                      # Additional edge features BRANCH_BASE_STATUS_E(11) + BRANCH_CONT_E(12)
-  hidden_size: 256
+  hidden_size: 128
   input_bus_dim: 17                 # Additional bus features + BUS_BASE_STATUS_H(15) + BUS_CONT_H(16)
   input_gen_dim: 6                  # Additional generator node-type feature dim
   output_bus_dim: 5
   output_gen_dim: 1
-  num_layers: 8
+  num_layers: 34
 
  # --- new, optional model features ---
   head_mode: split        # stream width = hidden_size, not hidden_size * heads
   norm_position: pre
   residual_mode: always
   physics_gate: true
-  physics_gate_init: 0.0
+  physics_gate_init: 1.0
   ffn_ratio: 0.0          # Option is 2.0
   topology_gating: none   # Option is message_mask as a separate A/B
   model_version: 0        # Model checkpoint

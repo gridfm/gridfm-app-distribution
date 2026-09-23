@@ -98,6 +98,106 @@ def benchmark_cli(args):
         print(f"\nAverage over {args.epochs} epochs: {avg:.3f}s")
 
 
+class PhysicsGateMonitor(L.Callback):
+    """Track physics_scale so a receptive-field collapse cannot pass unnoticed.
+
+    Parameters
+    ----------
+    floor : float
+        Value below which a layer's gate is considered closed. 0.10 is the point
+        at which measured reach at num_layers=24 fell below the 34 hops the
+        deepest training network needs.
+    per_layer : bool
+        Log every layer individually as well as the summary statistics.
+    """
+
+    def __init__(self, floor: float = 0.10, per_layer: bool = True):
+        self.floor = float(floor)
+        self.per_layer = bool(per_layer)
+        self._warned = False
+        self._missing_logged = False
+
+    @staticmethod
+    def _gate(pl_module):
+        model = getattr(pl_module, "model", None)
+        scale = getattr(model, "physics_scale", None)
+        # None when physics_gate: false -- the ungated branch has no LayerScale.
+        return scale if isinstance(scale, torch.Tensor) else None
+
+    def on_train_start(self, trainer, pl_module):
+        gate = self._gate(pl_module)
+        if not trainer.is_global_zero:
+            return
+        if gate is None:
+            print(
+                "[gate] physics_scale absent (physics_gate: false); "
+                "receptive field is 1 hop/layer",
+                flush=True,
+            )
+            return
+        vals = gate.detach().float().cpu()
+        print(
+            f"[gate] physics_scale: {gate.numel()} layers, "
+            f"init min={vals.min():.4f} mean={vals.mean():.4f} max={vals.max():.4f}, "
+            f"trainable={gate.requires_grad}",
+            flush=True,
+        )
+        if vals.max() <= 0.0:
+            print(
+                "[gate] WARNING: gate starts fully closed. The physics hop is "
+                "inactive, so reach is num_layers hops, not ~1.75x that.",
+                flush=True,
+            )
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        gate = self._gate(pl_module)
+        if gate is None:
+            if trainer.is_global_zero and not self._missing_logged:
+                self._missing_logged = True
+            return
+
+        vals = gate.detach().float().cpu()
+        below = float((vals.abs() < self.floor).float().mean())
+        metrics = {
+            "gate/mean": float(vals.mean()),
+            "gate/min": float(vals.min()),
+            "gate/max": float(vals.max()),
+            "gate/abs_min": float(vals.abs().min()),
+            "gate/frac_below_floor": below,
+        }
+        if self.per_layer:
+            for i, v in enumerate(vals.tolist()):
+                metrics[f"gate/layer_{i:02d}"] = float(v)
+
+        # Use log_metrics rather than pl_module.log
+        # to keep this out of the epoch-end reduction / sync_dist path.
+        if trainer.is_global_zero and trainer.logger is not None:
+            trainer.logger.log_metrics(metrics, step=trainer.global_step)
+
+        if trainer.is_global_zero and below > 0.5 and not self._warned:
+            self._warned = True
+            print(
+                f"[gate] WARNING: {below:.0%} of layers have |physics_scale| < "
+                f"{self.floor}. The physics hop is collapsing and the effective "
+                f"receptive field is approaching num_layers hops. If deep-bus "
+                f"status accuracy stalls, clamp the gate or freeze it.",
+                flush=True,
+            )
+
+    def on_train_end(self, trainer, pl_module):
+        gate = self._gate(pl_module)
+        if gate is None or not trainer.is_global_zero:
+            return
+        vals = gate.detach().float().cpu()
+        print(
+            f"[gate] final physics_scale: min={vals.min():.4f} "
+            f"mean={vals.mean():.4f} max={vals.max():.4f} "
+            f"({float((vals.abs() < self.floor).float().mean()):.0%} below "
+            f"{self.floor})",
+            flush=True,
+        )
+
+
 def get_training_callbacks(args):
     early_stop_callback = EarlyStopping(
         monitor="Validation loss",
@@ -120,7 +220,12 @@ def get_training_callbacks(args):
         save_top_k=0,
     )
 
-    return [early_stop_callback, save_best_model_callback, checkpoint_callback]
+    return [
+        early_stop_callback,
+        save_best_model_callback,
+        checkpoint_callback,
+        PhysicsGateMonitor(floor=0.10),  # receptive-field collapse alarm
+    ]
 
 
 def _num_nodes() -> int:
@@ -261,26 +366,37 @@ def main_cli(args):
     if args.command == "train" or args.command == "finetune":
         trainer.fit(model=model, datamodule=litGrid)
 
-    # Past this point everything is single-process and needs `logger`:
-    # artifacts_dir reads logger.save_dir/.experiment_id/.run_id, which on a
-    # non-zero rank would be False.save_dir -> AttributeError. The test and
-    # predict Trainers are already devices=1, num_nodes=1, so they are meant
-    # to run once, not on all nodes. fit() has returned, so DDP is torn down.
-    if rank != 0:
-        return
+    # The test phase MUST run on EVERY rank. VLDTask.on_test_end calls
+    # dist.gather_object(self.test_outputs, gathered, dst=0), a collective over
+    # the whole process group, and trainer.fit() does NOT tear that group down:
+    # measured dist.is_initialized() is still True and get_world_size() still
+    # returns the full world after fit() returns.
+
+    # The test Trainer therefore mirrors the fit geometry rather than using
+    # devices=1, num_nodes=1: on_test_end merges one shard per rank, so the test
+    # set has to be sharded the same way it was during fit, and each rank stays
+    # on the GPU it already owns instead of every rank piling onto device 0.
 
     if args.command != "predict":
         test_trainer = L.Trainer(
             logger=logger,
             accelerator=config_args.training.accelerator,
-            devices=1,
-            num_nodes=1,
+            devices=config_args.training.devices,  # fit geometry of training instead of explicit call
+            num_nodes=_num_nodes(),  # fit geometry of training instead of explicit call
+            strategy=config_args.training.strategy,  # fit geometry of training instead of explicit call
             log_every_n_steps=1,
             default_root_dir=args.log_dir,
             **trainer_kwargs,
             profiler=profiler,
         )
         test_trainer.test(model=model, datamodule=litGrid)
+
+    # Only NOW is it safe to drop the non-zero ranks. Everything below reads
+    # logger.save_dir/.experiment_id/.run_id, which is False.save_dir ->
+    # AttributeError on a rank whose logger is disabled. No collectives remain
+    # past this point, so leaving early here cannot strand rank 0.
+    if rank != 0:
+        return
 
     artifacts_dir = os.path.join(
         logger.save_dir,
