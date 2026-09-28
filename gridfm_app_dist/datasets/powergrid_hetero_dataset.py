@@ -126,7 +126,6 @@ class HeteroGridDatasetDisk(Dataset):
             bus_data["scenario"].min() == 0
             and bus_data["scenario"].max() == len(bus_data["scenario"].unique()) - 1
         )
-
         load_scenarios = torch.tensor(
             bus_data.groupby("scenario", sort=True)["load_scenario_idx"].first().values,
         )
@@ -342,27 +341,15 @@ class HeteroGridDatasetDisk(Dataset):
             to_pos = _map_bus_ids(branch_df["to_bus"], "branch to_bus")
             forward_edges = torch.stack([from_pos, to_pos])
             #####################
-            forward_edge_attr = torch.tensor(
-                branch_df[forward_branch_features].values,
-                dtype=torch.float,
-            )
+            forward_edge_attr = torch.tensor(branch_df[forward_branch_features].values,dtype=torch.float)
             reverse_edges = torch.stack([to_pos, from_pos])
-            reverse_edge_attr = torch.tensor(
-                branch_df[reverse_branch_features].values,
-                dtype=torch.float,
-            )
+            reverse_edge_attr = torch.tensor(branch_df[reverse_branch_features].values,dtype=torch.float)
 
             edge_index = torch.cat([forward_edges, reverse_edges], dim=1)
             edge_attr = torch.cat([forward_edge_attr, reverse_edge_attr], dim=0)
 
-            forward_targets = torch.tensor(
-                branch_df[["pf", "qf"]].values,
-                dtype=torch.float,
-            )
-            reverse_targets = torch.tensor(
-                branch_df[["pt", "qt"]].values,
-                dtype=torch.float,
-            )
+            forward_targets = torch.tensor(branch_df[["pf", "qf"]].values,dtype=torch.float)
+            reverse_targets = torch.tensor(branch_df[["pt", "qt"]].values,dtype=torch.float)
             edge_y = torch.cat([forward_targets, reverse_targets], dim=0)
 
             data["bus", "connects", "bus"].edge_index = edge_index

@@ -134,7 +134,6 @@ class LitGridHeteroDataModule(L.LightningDataModule):
 
             # Create torch dataset (normalizer is NOT yet fitted)
             data_path_network = os.path.join(self.data_dir, network)
-
             is_distributed = dist.is_available() and dist.is_initialized()
 
             if not is_distributed or dist.get_rank() == 0:
@@ -174,7 +173,6 @@ class LitGridHeteroDataModule(L.LightningDataModule):
 
             # load_scenario for each scenario in the subset
             load_scenarios = dataset.load_scenarios[subset_indices]
-
             dataset = Subset(dataset, subset_indices)
 
             if self.dataset_wrapper is not None:
@@ -206,14 +204,8 @@ class LitGridHeteroDataModule(L.LightningDataModule):
                 train_dataset,
                 subset_indices,
             )
-            val_scenario_ids = self._extract_scenario_ids(
-                val_dataset,
-                subset_indices,
-            )
-            test_scenario_ids = self._extract_scenario_ids(
-                test_dataset,
-                subset_indices,
-            )
+            val_scenario_ids = self._extract_scenario_ids(val_dataset, subset_indices)
+            test_scenario_ids = self._extract_scenario_ids(test_dataset, subset_indices)
 
             # Fit normalizer: restore from saved stats only for fit_on_train
             # normalizers (global baseMVA must match the model's training run).
