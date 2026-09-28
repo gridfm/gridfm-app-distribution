@@ -8,7 +8,7 @@ data:
   mask_value: 0.0                   # Initial value for masked parameters
   val_ratio: 0.1                    # ratio of data for validation
   test_ratio: 0.1                   # ratio of data for testing
-  workers: 4
+  workers: 8
 
 model:
   type: GNS_heterogeneous           # was GPSTransformer (not available in new repo)
@@ -20,7 +20,7 @@ model:
   input_gen_dim: 6                  # Additional generator node-type feature dim
   output_bus_dim: 5
   output_gen_dim: 1
-  num_layers: 34
+  num_layers: 24
 
  # --- new, optional model features ---
   head_mode: split        # stream width = hidden_size, not hidden_size * heads
