@@ -531,7 +531,7 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         data.y_dict["bus"][:, QD_H] /= b
         data.y_dict["bus"][:, QG_H] /= b
         data.y_dict["bus"][:, VA_H] *= torch.pi / 180.0
-        data.y_dict["bus"][:, PG_BUS_H] *= b # changed from self.baseMVA
+        data.y_dict["bus"][:, PG_BUS_H] *= b  # changed from self.baseMVA
 
         # --- Generator input normalization ---
         data.x_dict["gen"][:, PG_H] /= g
@@ -597,7 +597,7 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         data.y_dict["bus"][:, PD_H] *= b
         data.y_dict["bus"][:, QD_H] *= b
         data.y_dict["bus"][:, QG_H] *= b
-        data.y_dict["bus"][:, PG_BUS_H] *= b #changed from self.baseMVA
+        data.y_dict["bus"][:, PG_BUS_H] *= b  # changed from self.baseMVA
 
         # -------- GENERATOR INPUT INVERSE NORMALIZATION --------
         data.x_dict["gen"][:, PG_H] *= g
