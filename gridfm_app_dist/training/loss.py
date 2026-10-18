@@ -439,7 +439,11 @@ class VLDTopologyLoss(BaseLoss):
         self.off_vm_weight = getattr(loss_args, "off_vm_weight", 1.0)
         self.on_vm_weight = getattr(loss_args, "on_vm_weight", 0.5)
         self.unreachable_l1_weight = getattr(loss_args, "unreachable_l1_weight", 1.0)
-        self.topology_confidence_gamma = getattr(loss_args,"topology_confidence_gamma", 0.0)
+        self.topology_confidence_gamma = getattr(
+            loss_args,
+            "topology_confidence_gamma",
+            0.0,
+        )
 
         # Which buses count as energisation sources for the reachability BFS.
         #   "ref"         only the slack / ext_grid buses (REF_H).
@@ -447,27 +451,39 @@ class VLDTopologyLoss(BaseLoss):
         #                 Use only for grid-forming DG or  intentional-islanding studies.
         self.reachability_sources = getattr(loss_args, "reachability_sources", "ref")
         if self.reachability_sources not in ("ref", "ref_and_gen"):
-            raise ValueError(f"loss.reachability_sources must be 'ref' or 'ref_and_gen', got {self.reachability_sources!r}.")
+            raise ValueError(
+                f"loss.reachability_sources must be 'ref' or 'ref_and_gen', got {self.reachability_sources!r}.",
+            )
 
         # Up-weight the de-energised class in the topology BCE.
         # With correct labels the de-energised buses are a minority (severely so on large meshed networks),
         # and an unweighted BCE is minimised by predicting "energised" everywhere.
         # "auto" balances per batch; 1.0 disables.
-        self.unreachable_pos_weight = getattr(loss_args, "unreachable_pos_weight", "auto")
+        self.unreachable_pos_weight = getattr(
+            loss_args,
+            "unreachable_pos_weight",
+            "auto",
+        )
         if self.unreachable_pos_weight != "auto":
             try:
                 self.unreachable_pos_weight = float(self.unreachable_pos_weight)
             except (TypeError, ValueError):
-                raise ValueError(f"floss.unreachable_pos_weight must be 'auto' or a number, got {self.unreachable_pos_weight!r}.") from None
+                raise ValueError(
+                    f"floss.unreachable_pos_weight must be 'auto' or a number, got {self.unreachable_pos_weight!r}.",
+                ) from None
         self.max_pos_weight = float(getattr(loss_args, "max_pos_weight", 50.0))
 
         # EMA momentum for the "auto" class weight. Because the decision threshold is 1/(1+w_off), w_off must be stable across batches;
         # the EMA tracks the dataset-level ratio so a batch with a single de-energised bus can neither dominate the gradient nor move the threshold.
         # 0.0 falls back to the per-batch estimate.
         # Updated only in training mode; frozen (and checkpointed) for evaluation.
-        self.pos_weight_momentum = float(getattr(loss_args, "pos_weight_momentum", 0.99))
+        self.pos_weight_momentum = float(
+            getattr(loss_args, "pos_weight_momentum", 0.99),
+        )
         if not 0.0 <= self.pos_weight_momentum < 1.0:
-            raise ValueError(f"loss.pos_weight_momentum must be in [0, 1), got {self.pos_weight_momentum!r}.")
+            raise ValueError(
+                f"loss.pos_weight_momentum must be in [0, 1), got {self.pos_weight_momentum!r}.",
+            )
         self.register_buffer("ema_off_weight", torch.ones(()))
         self.register_buffer("ema_initialised", torch.zeros((), dtype=torch.bool))
 
@@ -476,27 +492,63 @@ class VLDTopologyLoss(BaseLoss):
         n_off = (sup_status < 0.5).sum()
         n_on = (sup_status >= 0.5).sum()
         if self.unreachable_pos_weight != "auto":
-            return torch.as_tensor(float(self.unreachable_pos_weight),device=device).clamp_min(1.0)
+            return torch.as_tensor(
+                float(self.unreachable_pos_weight),
+                device=device,
+            ).clamp_min(1.0)
 
         if n_off > 0:
-            batch_weight = (n_on.float() / n_off.float()).clamp(1.0, self.max_pos_weight)
+            batch_weight = (n_on.float() / n_off.float()).clamp(
+                1.0,
+                self.max_pos_weight,
+            )
         else:
             batch_weight = None  # nothing to estimate from in this batch
 
         if self.pos_weight_momentum == 0.0:
-            return batch_weight if batch_weight is not None else torch.ones((), device=device)
+            return (
+                batch_weight
+                if batch_weight is not None
+                else torch.ones((), device=device)
+            )
 
         if self.training and batch_weight is not None:
             with torch.no_grad():
                 if bool(self.ema_initialised):
                     self.ema_off_weight.mul_(self.pos_weight_momentum).add_(
-                        (1.0 - self.pos_weight_momentum) * batch_weight.to(self.ema_off_weight))
+                        (1.0 - self.pos_weight_momentum)
+                        * batch_weight.to(self.ema_off_weight),
+                    )
                 else:
                     self.ema_off_weight.copy_(batch_weight)
                     self.ema_initialised.fill_(True)
         if bool(self.ema_initialised):
             return self.ema_off_weight.to(device)
-        return batch_weight if batch_weight is not None else torch.ones((), device=device)
+        return (
+            batch_weight if batch_weight is not None else torch.ones((), device=device)
+        )
+
+    def decision_threshold(self):
+        """
+        Decision threshold theta = 1 / (1 + w_off) for the status probability,
+        or ``None`` when no training-time w_off is available.
+
+        Weighting the 0-class by w moves the BCE optimum from the posterior q to
+        q / (q + w (1 - q)); thresholding at 1 / (1 + w) maps it back to q = 0.5.
+        This is the threshold the loss uses for its own metrics and the one the
+        task must apply at test / predict time. It is derived from the fixed
+        ``unreachable_pos_weight`` when one is configured, otherwise from the
+        EMA buffer ``ema_off_weight`` (saved in the checkpoint). ``None`` means
+        the EMA was never initialised (an old checkpoint, or
+        ``pos_weight_momentum == 0``); callers should then fall back to the
+        per-batch value returned as "VLD Decision Threshold".
+        """
+        if self.unreachable_pos_weight != "auto":
+            w = max(float(self.unreachable_pos_weight), 1.0)
+            return 1.0 / (1.0 + w)
+        if self.pos_weight_momentum > 0.0 and bool(self.ema_initialised):
+            return 1.0 / (1.0 + float(self.ema_off_weight))
+        return None
 
     @staticmethod
     def _build_graph_reachability(
@@ -567,10 +619,14 @@ class VLDTopologyLoss(BaseLoss):
         bus_x = model.latest_x_dict["bus"] if hasattr(model, "latest_x_dict") else None
 
         if bus_x is None:
-            raise RuntimeError("VLDTopologyLoss requires model.latest_x_dict['bus']. Store x_dict on the model inside the forward pass.")
+            raise RuntimeError(
+                "VLDTopologyLoss requires model.latest_x_dict['bus']. Store x_dict on the model inside the forward pass.",
+            )
 
         if bus_pred.size(1) <= BUS_STATUS_LOGIT_OUT:
-            raise ValueError(f"VLDTopologyLoss expects bus predictions to include a status logit at column {BUS_STATUS_LOGIT_OUT}.")
+            raise ValueError(
+                f"VLDTopologyLoss expects bus predictions to include a status logit at column {BUS_STATUS_LOGIT_OUT}.",
+            )
 
         edge_index = edge_index_dict[("bus", "connects", "bus")]
         edge_attr = edge_attr_dict[("bus", "connects", "bus")]
@@ -601,7 +657,10 @@ class VLDTopologyLoss(BaseLoss):
 
         # Per-sample weights on the topology BCE.
         if self.topology_confidence_gamma:
-            topology_confidence = torch.exp(-self.topology_confidence_gamma * torch.abs(bus_available - topo_target))
+            topology_confidence = torch.exp(
+                -self.topology_confidence_gamma
+                * torch.abs(bus_available - topo_target),
+            )
         else:
             topology_confidence = torch.ones_like(topo_target)
 
@@ -609,28 +668,56 @@ class VLDTopologyLoss(BaseLoss):
         # an unweighted BCE over correct labels is very nearly minimised by predicting "energised" everywhere.
         off_weight = self._resolve_off_weight(topo_target, device)
         ones = torch.ones_like(topo_target)
-        class_weight = torch.where(topo_target < 0.5, off_weight.expand_as(topo_target), ones)
+        class_weight = torch.where(
+            topo_target < 0.5,
+            off_weight.expand_as(topo_target),
+            ones,
+        )
 
         # omega_i, eq. (8), zeroed on conflict buses: the topology signal that contradicts the label is removed there.
-        topology_weights = torch.where(conflict,torch.zeros_like(topo_target),topology_confidence * class_weight)
+        topology_weights = torch.where(
+            conflict,
+            torch.zeros_like(topo_target),
+            topology_confidence * class_weight,
+        )
 
         # nu_i, eq. (9): class weight keyed on the dataset label, raised to w_off on conflict buses in BOTH label directions,
         # so a conflicting label carries the minority-class emphasis whichever way it points.
         # Together with the zeroed omega_i this puts the stationary point of the logit at y_target itself (0 or 1) on every conflict bus.
-        anchor_weights = torch.where((target_status < 0.5) | conflict,off_weight.expand_as(target_status),ones)
+        anchor_weights = torch.where(
+            (target_status < 0.5) | conflict,
+            off_weight.expand_as(target_status),
+            ones,
+        )
 
-        topology_bce_raw = F.binary_cross_entropy_with_logits(status_logit,topo_target,reduction="none")
-        topology_bce = (topology_weights * topology_bce_raw).sum() / (topology_weights.sum().clamp_min(1e-8))
+        topology_bce_raw = F.binary_cross_entropy_with_logits(
+            status_logit,
+            topo_target,
+            reduction="none",
+        )
+        topology_bce = (topology_weights * topology_bce_raw).sum() / (
+            topology_weights.sum().clamp_min(1e-8)
+        )
 
-        anchor_bce_raw = F.binary_cross_entropy_with_logits(status_logit,target_status,reduction="none")
-        target_anchor_bce = (anchor_weights * anchor_bce_raw).sum() / (anchor_weights.sum().clamp_min(1e-8))
+        anchor_bce_raw = F.binary_cross_entropy_with_logits(
+            status_logit,
+            target_status,
+            reduction="none",
+        )
+        target_anchor_bce = (anchor_weights * anchor_bce_raw).sum() / (
+            anchor_weights.sum().clamp_min(1e-8)
+        )
 
         # Voltage supervision follows the same topo status of the logit
         unreachable_mask = (topo_target < 0.5).float()
         reachable_mask = (topo_target >= 0.5).float()
 
-        off_vm_l2 = ( (pred_vm**2) * unreachable_mask ).sum() / unreachable_mask.sum().clamp_min(1.0)
-        off_vm_l1 = ( pred_vm.abs() * unreachable_mask ).sum() / unreachable_mask.sum().clamp_min(1.0)
+        off_vm_l2 = (
+            (pred_vm**2) * unreachable_mask
+        ).sum() / unreachable_mask.sum().clamp_min(1.0)
+        off_vm_l1 = (
+            pred_vm.abs() * unreachable_mask
+        ).sum() / unreachable_mask.sum().clamp_min(1.0)
         off_vm_loss = off_vm_l2 + self.unreachable_l1_weight * off_vm_l1
 
         on_vm_w = reachable_mask * status_prob.detach()
@@ -660,17 +747,22 @@ class VLDTopologyLoss(BaseLoss):
             tp = (off_true & off_pred).sum().float()
             recall_off = tp / off_true.sum().clamp_min(1).float()
             precision_off = tp / off_pred.sum().clamp_min(1).float()
-            f1_off = (2 * precision_off * recall_off) / ( precision_off + recall_off ).clamp_min(1e-8)
+            f1_off = (2 * precision_off * recall_off) / (
+                precision_off + recall_off
+            ).clamp_min(1e-8)
 
             # Energised recall = 1 - false-de-energisation rate.
-            recall_on = (on_true & ~off_pred).sum().float() / on_true.sum().clamp_min(1).float()
+            recall_on = (on_true & ~off_pred).sum().float() / on_true.sum().clamp_min(
+                1,
+            ).float()
             balanced_acc = 0.5 * (recall_off + recall_on)
-
 
             # Calibration on the buses that are unambiguously energised: BFS says reachable AND the label says 1.
             # Should sit near 1; if it sits near 1/(1+w_off) the class weight is what is pulling it down.
             clear_on = on_true & (topo_target >= 0.5)
-            mean_prob_clear_on = (status_prob * clear_on).sum() / clear_on.sum().clamp_min(1)
+            mean_prob_clear_on = (
+                status_prob * clear_on
+            ).sum() / clear_on.sum().clamp_min(1)
 
             # Data-integrity check: with a correct BFS, the derived reachability label should agree with the dataset's own bus_status_target.
             # A persistent disagreement means one of the two is wrong - most likely the contingency flags or the source definition -

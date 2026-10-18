@@ -207,9 +207,19 @@ def get_training_callbacks(args):
         mode="min",
     )
 
+    # For VLD the total loss is dominated by the voltage / PBE terms, so the
+    # lowest-loss epoch is not necessarily the best classifier. Select the
+    # exported state dict on balanced accuracy (mean of off- and on-recall,
+    # computed at the loss's own 1/(1+w_off) threshold) instead. Early stopping
+    # stays on the loss.
+    if getattr(args.task, "task_name", None) == "VoltageLossDetection":
+        best_monitor, best_mode = "Validation VLD Balanced Accuracy", "max"
+    else:
+        best_monitor, best_mode = "Validation loss", "min"
+
     save_best_model_callback = SaveBestModelStateDict(
-        monitor="Validation loss",
-        mode="min",
+        monitor=best_monitor,
+        mode=best_mode,
         filename="best_model_state_dict.pt",
     )
 
@@ -327,7 +337,30 @@ def main_cli(args):
     if args.command != "train":
         print(f"Loading model weights from {args.model_path}")
         state_dict = torch.load(args.model_path, map_location="cpu")
-        model.load_state_dict(state_dict)
+        # Non-strict so that checkpoints saved before the VLDTopologyLoss EMA
+        # buffers (loss_fn.*.ema_off_weight / ema_initialised) existed still
+        # load; they then fall back to the per-batch decision threshold.
+        load_result = model.load_state_dict(state_dict, strict=False)
+        if load_result.missing_keys:
+            print(
+                "Warning: checkpoint is missing "
+                f"{len(load_result.missing_keys)} key(s): "
+                f"{load_result.missing_keys}",
+            )
+        if load_result.unexpected_keys:
+            print(
+                "Warning: checkpoint has "
+                f"{len(load_result.unexpected_keys)} unexpected key(s): "
+                f"{load_result.unexpected_keys}",
+            )
+        model_keys = [
+            k for k in load_result.missing_keys if k.startswith("model.")
+        ]
+        if model_keys:
+            raise RuntimeError(
+                "Checkpoint does not match the model architecture; missing "
+                f"model weights: {model_keys}",
+            )
 
     precision = "bf16-true" if getattr(args, "bfloat16", False) else None
     if precision:

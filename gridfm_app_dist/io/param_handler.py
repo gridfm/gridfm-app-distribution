@@ -66,19 +66,26 @@ def load_normalizer(args):
 
 def get_loss_function(args):
     """Build a MixedLoss from the configured loss names / args / weights.
-    For the VoltageLossDetection task, configure a single loss, e.g.:
+    For the VoltageLossDetection task, configure the VLD loss, e.g.:
         training:
           losses: ["VLDTopologyLoss"]
           loss_args:
-            - input_state_threshold: 0.5
-              prediction_threshold: 0.5
-              topology_weight: 1.0
-              target_anchor_weight: 0.25
-              off_vm_weight: 1.0
-              on_vm_weight: 0.5
-              unreachable_l1_weight: 1.0
-              topology_confidence_gamma: 10.0
+            - topology_weight: 1.0            # lambda_reach
+              target_anchor_weight: 0.5       # lambda_anc
+              off_vm_weight: 1.0              # lambda_off
+              on_vm_weight: 0.5               # lambda_on
+              unreachable_l1_weight: 1.0      # lambda_1
+              unreachable_pos_weight: auto    # w_off = n_on / n_off, or a number
+              max_pos_weight: 10.0
+              pos_weight_momentum: 0.99       # EMA of w_off; 0 = per batch
+              reachability_sources: ref       # or ref_and_gen
+              input_state_threshold: 0.5
+              topology_confidence_gamma: 0.0  # 0 disables (recommended)
           loss_weights: [1.0]
+    The decision threshold is not configurable: the loss derives it as
+    1 / (1 + w_off) and the VLD task reads it back at test / predict time.
+    Conflicts between the BFS label and the dataset label are always resolved
+    toward the dataset label.
     """
     loss_functions = []
     for loss_name, loss_args in zip(args.training.losses, args.training.loss_args):

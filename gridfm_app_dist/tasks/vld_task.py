@@ -6,6 +6,7 @@ from lightning.pytorch.loggers import MLFlowLogger
 
 from gridfm_app_dist.io.registries import TASK_REGISTRY
 from gridfm_app_dist.tasks.reconstruction_tasks import ReconstructionTask
+from gridfm_app_dist.training.loss import VLDTopologyLoss
 from gridfm_app_dist.datasets.globals import (
     VM_OUT,
     VM_H,
@@ -26,6 +27,31 @@ class VoltageLossDetectionTask(ReconstructionTask):
     def __init__(self, args, data_normalizers):
         super().__init__(args, data_normalizers)
 
+    def _decision_threshold(self, loss_dict):
+        """
+        Threshold on the status probability above which a bus is called
+        energised. The loss is trained with the de-energised class up-weighted
+        by w_off, which moves its optimum away from the posterior, so the
+        matching threshold is 1 / (1 + w_off), not 0.5 (and never a fixed 0.9).
+
+        Preference order:
+          1. the training-time w_off stored in the VLDTopologyLoss EMA buffer
+             (restored from the checkpoint with the rest of the state dict);
+          2. the per-batch value the loss just computed ("VLD Decision
+             Threshold"), used when no EMA is available;
+          3. 0.5, if the configured losses contain no VLDTopologyLoss at all.
+        """
+        for loss_fn in getattr(self.loss_fn, "loss_functions", []):
+            if isinstance(loss_fn, VLDTopologyLoss):
+                theta = loss_fn.decision_threshold()
+                if theta is not None:
+                    return float(theta)
+                break
+        theta = loss_dict.get("VLD Decision Threshold")
+        if theta is not None:
+            return float(theta)
+        return 0.5
+
     def test_step(self, batch, batch_idx, dataloader_idx=0):
         output, loss_dict = self.shared_step(batch)
         dataset_name = self.args.data.networks[dataloader_idx]
@@ -33,17 +59,19 @@ class VoltageLossDetectionTask(ReconstructionTask):
         bus_pred = output["bus"]
         bus_target = batch.y_dict["bus"]
 
+        threshold = self._decision_threshold(loss_dict)
         status_prob = torch.sigmoid(bus_pred[:, BUS_STATUS_LOGIT_OUT])
-        status_pred = (status_prob >= 0.9).float()
+        status_pred = (status_prob >= threshold).float()
         status_true = bus_target[:, BUS_STATUS_TARGET].float()
 
         vm_pred = bus_pred[:, VM_OUT]
         vm_true = bus_target[:, VM_H]
 
-        status_acc = (status_pred == status_true).float().mean()
-
-        off_mask = status_true < 0.9
-        on_mask = status_true >= 0.9
+        # Classification metrics (accuracy, off recall / precision / F1, on
+        # recall, balanced accuracy) are already in loss_dict, computed by the
+        # loss at the same threshold. Only the voltage metrics are added here.
+        off_mask = status_true < 0.5
+        on_mask = status_true >= 0.5
 
         off_vm_mae = (
             vm_pred[off_mask].abs().mean()
@@ -56,7 +84,6 @@ class VoltageLossDetectionTask(ReconstructionTask):
             else torch.tensor(0.0, device=vm_pred.device)
         )
 
-        loss_dict["Status Accuracy"] = status_acc.detach()
         loss_dict["OFF Vm MAE"] = off_vm_mae.detach()
         loss_dict["ON Vm RMSE"] = on_vm_rmse.detach()
 
@@ -81,6 +108,7 @@ class VoltageLossDetectionTask(ReconstructionTask):
                 "status_true": status_true.detach().cpu(),
                 "vm_pred": vm_pred.detach().cpu(),
                 "vm_true": vm_true.detach().cpu(),
+                "threshold": torch.full_like(status_prob, threshold).cpu(),
             },
         )
 
@@ -122,12 +150,14 @@ class VoltageLossDetectionTask(ReconstructionTask):
             status_true = torch.cat([o["status_true"] for o in outputs]).numpy()
             vm_pred = torch.cat([o["vm_pred"] for o in outputs]).numpy()
             vm_true = torch.cat([o["vm_true"] for o in outputs]).numpy()
+            threshold = torch.cat([o["threshold"] for o in outputs]).numpy()
 
             df = pd.DataFrame(
                 {
                     "status_prob": status_prob,
                     "status_pred": status_pred,
                     "status_true": status_true,
+                    "threshold": threshold,
                     "vm_pred": vm_pred,
                     "vm_true": vm_true,
                 },
@@ -140,9 +170,10 @@ class VoltageLossDetectionTask(ReconstructionTask):
         self.test_outputs.clear()
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        output, _ = self.shared_step(batch)
+        output, loss_dict = self.shared_step(batch)
 
         bus_pred = output["bus"]
+        threshold = self._decision_threshold(loss_dict)
         status_prob = torch.sigmoid(bus_pred[:, BUS_STATUS_LOGIT_OUT])
 
         bus_batch = batch.batch_dict["bus"]
@@ -160,7 +191,8 @@ class VoltageLossDetectionTask(ReconstructionTask):
             "bus": local_bus_idx.cpu().numpy(),
             "vm_pred": bus_pred[:, VM_OUT].detach().cpu().numpy(),
             "status_prob": status_prob.detach().cpu().numpy(),
-            "status_pred": (status_prob >= 0.9).float().detach().cpu().numpy(),
+            "status_pred": (status_prob >= threshold).float().detach().cpu().numpy(),
+            "threshold": torch.full_like(status_prob, threshold).detach().cpu().numpy(),
             "status_true": batch.y_dict["bus"][:, BUS_STATUS_TARGET]
             .detach()
             .cpu()
