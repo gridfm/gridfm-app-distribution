@@ -404,53 +404,99 @@ class VLDTopologyLoss(BaseLoss):
       target_dict["bus"] : [Pd, Qd, Qg, Vm, Va, bus_status_target]
       x_dict["bus"]      : standard bus features + [bus_base_status, bus_contingency]
       edge_attr          : standard edge attrs + [branch_base_status, branch_contingency]
+
+    Status supervision (paper eqs. 13-14) uses two BCE terms on the status logit z:
+    the primary term against the BFS reachability label y_reach and a secondary anchor against the dataset label y_target.
+    Where the two labels agree both terms push z the same way.
+    Where they disagree (conflict buses, C = {i : y_reach != y_target}) the dataset label is authoritative:
+    the topology BCE weight is zeroed and the anchor weight is set to the minority-class weight w_off,
+    so the stationary point of the logit is the label, whether it is 0 or 1.
+    The class balance and the voltage masks are keyed on that same supervised status,
+    so no bus is ever given a voltage target that contradicts its status target.
+
+    Class balance: the de-energised class is weighted by w_off = n_on / n_off (eq. 6).
+    Weighting the 0-class by w moves the optimum of the BCE from the true posterior q to q / (q + w (1 - q)),
+    so a fixed 0.5 decision threshold over-predicts de-energised.
+    The decision threshold is therefore not a arameter: it is always 1 / (1 + w_off),
+    which restores the boundary q = 0.5 and tracks w_off as it moves during training.
+    Use the same rule at inference (the threshold is returned as "VLD Decision Threshold" and w_off is stored in the ``ema_off_weight`` buffer).
+
+    Tunable parameters (all others are fixed by the formulation):
+      topology_weight, target_anchor_weight, off_vm_weight, on_vm_weight,
+      unreachable_l1_weight  - the lambda_* of eq. (18) and lambda_1 of eq. (15)
+      topology_confidence_gamma - gamma of eq. (8), 0 disables
+      reachability_sources   - "ref" or "ref_and_gen"
+      unreachable_pos_weight - "auto" (n_on/n_off, EMA-smoothed) or a number
+      max_pos_weight, pos_weight_momentum, input_state_threshold
     """
 
     def __init__(self, loss_args, args):
         super().__init__()
         self.args = args
         self.input_state_threshold = getattr(loss_args, "input_state_threshold", 0.5)
-        self.prediction_threshold = getattr(loss_args, "prediction_threshold", 0.5)
         self.topology_weight = getattr(loss_args, "topology_weight", 1.0)
         self.target_anchor_weight = getattr(loss_args, "target_anchor_weight", 0.25)
         self.off_vm_weight = getattr(loss_args, "off_vm_weight", 1.0)
         self.on_vm_weight = getattr(loss_args, "on_vm_weight", 0.5)
         self.unreachable_l1_weight = getattr(loss_args, "unreachable_l1_weight", 1.0)
-        self.topology_confidence_gamma = getattr(
-            loss_args,
-            "topology_confidence_gamma",
-            0.0,
-        )
+        self.topology_confidence_gamma = getattr(loss_args,"topology_confidence_gamma", 0.0)
+
         # Which buses count as energisation sources for the reachability BFS.
-        #   "ref"         only the slack / ext_grid buses (REF_H). Correct for
-        #                 IEEE-1547-style DG that trips on loss of mains.
-        #   "ref_and_gen" REF_H or PV_H, i.e. islands with local generation are
-        #                 treated as energised. Use only for grid-forming DG or
-        #                 intentional-islanding studies.
+        #   "ref"         only the slack / ext_grid buses (REF_H).
+        #   "ref_and_gen" REF_H or PV_H, i.e. islands with local generation are treated as energised.
+        #                 Use only for grid-forming DG or  intentional-islanding studies.
         self.reachability_sources = getattr(loss_args, "reachability_sources", "ref")
         if self.reachability_sources not in ("ref", "ref_and_gen"):
-            raise ValueError(
-                "loss.reachability_sources must be 'ref' or 'ref_and_gen', "
-                f"got {self.reachability_sources!r}.",
-            )
-        # Up-weight the de-energised class in the topology BCE. With correct
-        # labels the de-energised buses are a minority (severely so on large
-        # meshed networks), and an unweighted BCE is minimised by predicting
-        # "energised" everywhere. "auto" balances per batch; 1.0 disables.
-        self.unreachable_pos_weight = getattr(
-            loss_args,
-            "unreachable_pos_weight",
-            "auto",
-        )
+            raise ValueError(f"loss.reachability_sources must be 'ref' or 'ref_and_gen', got {self.reachability_sources!r}.")
+
+        # Up-weight the de-energised class in the topology BCE.
+        # With correct labels the de-energised buses are a minority (severely so on large meshed networks),
+        # and an unweighted BCE is minimised by predicting "energised" everywhere.
+        # "auto" balances per batch; 1.0 disables.
+        self.unreachable_pos_weight = getattr(loss_args, "unreachable_pos_weight", "auto")
         if self.unreachable_pos_weight != "auto":
             try:
                 self.unreachable_pos_weight = float(self.unreachable_pos_weight)
             except (TypeError, ValueError):
-                raise ValueError(
-                    "loss.unreachable_pos_weight must be 'auto' or a number, got "
-                    f"{self.unreachable_pos_weight!r}.",
-                ) from None
+                raise ValueError(f"floss.unreachable_pos_weight must be 'auto' or a number, got {self.unreachable_pos_weight!r}.") from None
         self.max_pos_weight = float(getattr(loss_args, "max_pos_weight", 50.0))
+
+        # EMA momentum for the "auto" class weight. Because the decision threshold is 1/(1+w_off), w_off must be stable across batches;
+        # the EMA tracks the dataset-level ratio so a batch with a single de-energised bus can neither dominate the gradient nor move the threshold.
+        # 0.0 falls back to the per-batch estimate.
+        # Updated only in training mode; frozen (and checkpointed) for evaluation.
+        self.pos_weight_momentum = float(getattr(loss_args, "pos_weight_momentum", 0.99))
+        if not 0.0 <= self.pos_weight_momentum < 1.0:
+            raise ValueError(f"loss.pos_weight_momentum must be in [0, 1), got {self.pos_weight_momentum!r}.")
+        self.register_buffer("ema_off_weight", torch.ones(()))
+        self.register_buffer("ema_initialised", torch.zeros((), dtype=torch.bool))
+
+    def _resolve_off_weight(self, sup_status, device):
+        """Minority-class weight w_off (eq. 6), EMA-smoothed."""
+        n_off = (sup_status < 0.5).sum()
+        n_on = (sup_status >= 0.5).sum()
+        if self.unreachable_pos_weight != "auto":
+            return torch.as_tensor(float(self.unreachable_pos_weight),device=device).clamp_min(1.0)
+
+        if n_off > 0:
+            batch_weight = (n_on.float() / n_off.float()).clamp(1.0, self.max_pos_weight)
+        else:
+            batch_weight = None  # nothing to estimate from in this batch
+
+        if self.pos_weight_momentum == 0.0:
+            return batch_weight if batch_weight is not None else torch.ones((), device=device)
+
+        if self.training and batch_weight is not None:
+            with torch.no_grad():
+                if bool(self.ema_initialised):
+                    self.ema_off_weight.mul_(self.pos_weight_momentum).add_(
+                        (1.0 - self.pos_weight_momentum) * batch_weight.to(self.ema_off_weight))
+                else:
+                    self.ema_off_weight.copy_(batch_weight)
+                    self.ema_initialised.fill_(True)
+        if bool(self.ema_initialised):
+            return self.ema_off_weight.to(device)
+        return batch_weight if batch_weight is not None else torch.ones((), device=device)
 
     @staticmethod
     def _build_graph_reachability(
@@ -465,9 +511,9 @@ class VLDTopologyLoss(BaseLoss):
         """
         Build hard reachability labels from base-status and contingency indicators.
 
-        A bus is energised iff (a) it is itself available - base status on and not
-        directly hit by a contingency - AND (b) there is a path of available
-        branches through available buses from an energisation SOURCE to it.
+        A bus is energised if:
+        (a) it is itself available - base status on and not directly hit by a contingency; AND
+        (b) there is a path of available branches through available buses from an energisation SOURCE to it.
         """
         bus_base = bus_x[:, BUS_BASE_STATUS_H] > threshold
         bus_hit = bus_x[:, BUS_CONT_H] > threshold
@@ -487,7 +533,6 @@ class VLDTopologyLoss(BaseLoss):
             # Whole-graph blackout: nothing is energised. Returning all-zero is
             # correct, not a degenerate fallback.
             return reachable.float(), bus_available.float()
-
         reachable = reachable | seeds
 
         # Symmetrise: do not depend on both directions being present in the data.
@@ -506,7 +551,6 @@ class VLDTopologyLoss(BaseLoss):
             if torch.equal(updated, reachable):
                 break
             reachable = updated
-
         return reachable.float(), bus_available.float()
 
     def forward(
@@ -523,16 +567,10 @@ class VLDTopologyLoss(BaseLoss):
         bus_x = model.latest_x_dict["bus"] if hasattr(model, "latest_x_dict") else None
 
         if bus_x is None:
-            raise RuntimeError(
-                "VLDTopologyLoss requires model.latest_x_dict['bus']. "
-                "Store x_dict on the model inside the forward pass.",
-            )
+            raise RuntimeError("VLDTopologyLoss requires model.latest_x_dict['bus']. Store x_dict on the model inside the forward pass.")
 
         if bus_pred.size(1) <= BUS_STATUS_LOGIT_OUT:
-            raise ValueError(
-                "VLDTopologyLoss expects bus predictions to include a status logit "
-                f"at column {BUS_STATUS_LOGIT_OUT}.",
-            )
+            raise ValueError(f"VLDTopologyLoss expects bus predictions to include a status logit at column {BUS_STATUS_LOGIT_OUT}.")
 
         edge_index = edge_index_dict[("bus", "connects", "bus")]
         edge_attr = edge_attr_dict[("bus", "connects", "bus")]
@@ -540,6 +578,7 @@ class VLDTopologyLoss(BaseLoss):
         num_bus = bus_pred.size(0)
         device = bus_pred.device
 
+        # Build graph reachability to get reachable bus
         topo_target, bus_available = self._build_graph_reachability(
             num_bus=num_bus,
             edge_index=edge_index,
@@ -557,72 +596,41 @@ class VLDTopologyLoss(BaseLoss):
         target_vm = bus_target[:, VM_H].float()
         pred_vm = bus_pred[:, VM_OUT].float()
 
+        # Conflict buses: BFS reachability and the dataset label disagree.
+        conflict = (topo_target < 0.5) != (target_status < 0.5)
+
         # Per-sample weights on the topology BCE.
         if self.topology_confidence_gamma:
-            topology_confidence = torch.exp(
-                -self.topology_confidence_gamma
-                * torch.abs(bus_available - topo_target),
-            )
+            topology_confidence = torch.exp(-self.topology_confidence_gamma * torch.abs(bus_available - topo_target))
         else:
             topology_confidence = torch.ones_like(topo_target)
 
-        # Class balance instead. De-energised buses are the minority class and
-        # the one that matters; an unweighted BCE over correct labels is very
-        # nearly minimised by predicting "energised" everywhere.
-        n_off = (topo_target < 0.5).sum()
-        n_on = (topo_target >= 0.5).sum()
-        if self.unreachable_pos_weight == "auto":
-            if n_off > 0:
-                off_weight = (n_on.float() / n_off.float()).clamp(
-                    1.0,
-                    self.max_pos_weight,
-                )
-            else:
-                off_weight = torch.ones((), device=device)
-        else:
-            off_weight = torch.as_tensor(
-                float(self.unreachable_pos_weight),
-                device=device,
-            ).clamp_min(1.0)
-        class_weight = torch.where(
-            topo_target < 0.5,
-            off_weight.expand_as(topo_target),
-            torch.ones_like(topo_target),
-        )
-        topology_weights = topology_confidence * class_weight
+        # Class balance. De-energised buses are the minority class and the one that matters;
+        # an unweighted BCE over correct labels is very nearly minimised by predicting "energised" everywhere.
+        off_weight = self._resolve_off_weight(topo_target, device)
+        ones = torch.ones_like(topo_target)
+        class_weight = torch.where(topo_target < 0.5, off_weight.expand_as(topo_target), ones)
 
-        topology_bce_raw = F.binary_cross_entropy_with_logits(
-            status_logit,
-            topo_target,
-            reduction="none",
-        )
-        topology_bce = (topology_weights * topology_bce_raw).sum() / (
-            topology_weights.sum().clamp_min(1e-8)
-        )
+        # omega_i, eq. (8), zeroed on conflict buses: the topology signal that contradicts the label is removed there.
+        topology_weights = torch.where(conflict,torch.zeros_like(topo_target),topology_confidence * class_weight)
 
-        anchor_weights = torch.where(
-            target_status < 0.5,
-            off_weight.expand_as(target_status),
-            torch.ones_like(target_status),
-        )
-        target_anchor_bce = (
-            anchor_weights
-            * F.binary_cross_entropy_with_logits(
-                status_logit,
-                target_status,
-                reduction="none",
-            )
-        ).sum() / anchor_weights.sum().clamp_min(1e-8)
+        # nu_i, eq. (9): class weight keyed on the dataset label, raised to w_off on conflict buses in BOTH label directions,
+        # so a conflicting label carries the minority-class emphasis whichever way it points.
+        # Together with the zeroed omega_i this puts the stationary point of the logit at y_target itself (0 or 1) on every conflict bus.
+        anchor_weights = torch.where((target_status < 0.5) | conflict,off_weight.expand_as(target_status),ones)
 
+        topology_bce_raw = F.binary_cross_entropy_with_logits(status_logit,topo_target,reduction="none")
+        topology_bce = (topology_weights * topology_bce_raw).sum() / (topology_weights.sum().clamp_min(1e-8))
+
+        anchor_bce_raw = F.binary_cross_entropy_with_logits(status_logit,target_status,reduction="none")
+        target_anchor_bce = (anchor_weights * anchor_bce_raw).sum() / (anchor_weights.sum().clamp_min(1e-8))
+
+        # Voltage supervision follows the same topo status of the logit
         unreachable_mask = (topo_target < 0.5).float()
         reachable_mask = (topo_target >= 0.5).float()
 
-        off_vm_l2 = (
-            (pred_vm**2) * unreachable_mask
-        ).sum() / unreachable_mask.sum().clamp_min(1.0)
-        off_vm_l1 = (
-            pred_vm.abs() * unreachable_mask
-        ).sum() / unreachable_mask.sum().clamp_min(1.0)
+        off_vm_l2 = ( (pred_vm**2) * unreachable_mask ).sum() / unreachable_mask.sum().clamp_min(1.0)
+        off_vm_l1 = ( pred_vm.abs() * unreachable_mask ).sum() / unreachable_mask.sum().clamp_min(1.0)
         off_vm_loss = off_vm_l2 + self.unreachable_l1_weight * off_vm_l1
 
         on_vm_w = reachable_mask * status_prob.detach()
@@ -636,28 +644,42 @@ class VLDTopologyLoss(BaseLoss):
             + self.on_vm_weight * on_vm_loss
         )
 
-        pred_status = (status_prob >= self.prediction_threshold).float()
+        # Balanced decision threshold. The class weight moves the BCE optimum from q to q / (q + w (1 - q));
+        # thresholding at 1 / (1 + w) maps that back to the boundary q = 0.5, and follows w_off as it moves.
+        threshold = 1.0 / (1.0 + off_weight.detach().float())
+        pred_status = (status_prob >= threshold).float()
         topo_acc = (pred_status == topo_target).float().mean()
         target_acc = (pred_status == target_status).float().mean()
 
-        # Accuracy on this task is dominated by the energised majority class and
-        # reads ~99% for a model that never predicts an outage. Report recall and
-        # precision on the DE-ENERGISED class, which is what VLD is for.
+        # Accuracy on this task is dominated by the energised majority class and- reads ~99% for a model that never predicts an outage.
+        # Report recall and precision on the DE-ENERGISED class, which is what VLD is for,
         with torch.no_grad():
             off_true = target_status < 0.5
+            on_true = ~off_true
             off_pred = pred_status < 0.5
             tp = (off_true & off_pred).sum().float()
             recall_off = tp / off_true.sum().clamp_min(1).float()
             precision_off = tp / off_pred.sum().clamp_min(1).float()
-            f1_off = (2 * precision_off * recall_off) / (
-                precision_off + recall_off
-            ).clamp_min(1e-8)
-            # Data-integrity check: with a correct BFS, the derived reachability
-            # label should agree with the dataset's own bus_status_target. A
-            # persistent disagreement means one of the two is wrong - most likely
-            # the contingency flags or the source definition - and it is worth
-            # seeing on the training curves rather than discovering later.
-            topo_vs_target = (topo_target != target_status).float().mean()
+            f1_off = (2 * precision_off * recall_off) / ( precision_off + recall_off ).clamp_min(1e-8)
+
+            # Energised recall = 1 - false-de-energisation rate.
+            recall_on = (on_true & ~off_pred).sum().float() / on_true.sum().clamp_min(1).float()
+            balanced_acc = 0.5 * (recall_off + recall_on)
+
+
+            # Calibration on the buses that are unambiguously energised: BFS says reachable AND the label says 1.
+            # Should sit near 1; if it sits near 1/(1+w_off) the class weight is what is pulling it down.
+            clear_on = on_true & (topo_target >= 0.5)
+            mean_prob_clear_on = (status_prob * clear_on).sum() / clear_on.sum().clamp_min(1)
+
+            # Data-integrity check: with a correct BFS, the derived reachability label should agree with the dataset's own bus_status_target.
+            # A persistent disagreement means one of the two is wrong - most likely the contingency flags or the source definition -
+            # and it is worth seeing on the training curves rather than discovering later.
+            topo_vs_target = conflict.float().mean()
+
+            # Split the disagreement by direction: reach=0/label=1 is the case that the legacy "zero" rule turned into false de-energisations.
+            conflict_label_on = (conflict & on_true).float().mean()
+            conflict_label_off = (conflict & off_true).float().mean()
             off_rate = (topo_target < 0.5).float().mean()
 
         return {
@@ -668,12 +690,18 @@ class VLDTopologyLoss(BaseLoss):
             "VLD On Vm Loss": on_vm_loss.detach(),
             "VLD Topology Accuracy": topo_acc.detach(),
             "VLD Target Accuracy": target_acc.detach(),
+            "VLD Balanced Accuracy": balanced_acc,
             "VLD Off Recall": recall_off,
             "VLD Off Precision": precision_off,
             "VLD Off F1": f1_off,
+            "VLD On Recall": recall_on,
+            "VLD Mean Prob (reachable & label 1)": mean_prob_clear_on,
             "VLD Off Rate (labels)": off_rate,
             "VLD Topo-vs-Target Disagreement": topo_vs_target,
+            "VLD Conflict Rate (reach 0, label 1)": conflict_label_on,
+            "VLD Conflict Rate (reach 1, label 0)": conflict_label_off,
             "VLD Off Class Weight": off_weight.detach().float(),
+            "VLD Decision Threshold": threshold.detach().float(),
         }
 
 

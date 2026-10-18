@@ -22,39 +22,31 @@ model:
   output_gen_dim: 1
   num_layers: 24
 
- # --- new, optional model features ---
-  head_mode: split        # stream width = hidden_size, not hidden_size * heads
-  norm_position: pre
-  residual_mode: always
-  physics_gate: true
-  physics_gate_init: 1.0
-  ffn_ratio: 0.0          # Option is 2.0
-  topology_gating: none   # Option is message_mask as a separate A/B
-  model_version: 0        # Model checkpoint
-
 training:
-  batch_size: 1
-  epochs: 20
+  batch_size: 64
+  epochs: 100
   losses: ["MaskedMSE", "PBE", "VLDTopologyLoss"]
-  loss_weights: [0.05, 0.55, 0.40]
+  loss_weights: [0.05, 0.15, 0.80]
 
 
   loss_args: # parameters for tuning the loss functions
     - {}                           # MaskedMSE tuning can be activated for fien tuning tasks
-    - {}                           # PBE tuning can be activated for fien tuning tasks
-    - input_state_threshold: 0.5   # VLDTopologyLoss tuning
-      prediction_threshold: 0.5
-      topology_weight: 1.0
-      target_anchor_weight: 0.25
-      off_vm_weight: 1.0
-      on_vm_weight: 0.5
-      unreachable_l1_weight: 1.0
+    - {}                           # PBE tuning can be activated for fine tuning tasks
+    - # ---- VLDTopologyLoss -------------------------------------------------
+      topology_weight: 1.0           # lambda_reach (Primary BCE loss weight)
+      target_anchor_weight: 0.5      # lambda_anc  (Secondary BCE anchor loss)
+      off_vm_weight: 1.0             # lambda_off (Drives V_hat -> 0 on de-energised buses)
+      on_vm_weight: 0.5              # lambda_on (Drives V_hat by MSE on energised buses)
+      unreachable_l1_weight: 1.0     # lambda_1 (Constant pull towards 0)
 
-      # optional features
-      reachability_sources: ref        # or ref_and_gen for grid-forming DG
-      unreachable_pos_weight: auto     # or a number; 1.0 disables
-      max_pos_weight: 50.0             # raise for meshed networks (see caveat in 2.4g)
-      topology_confidence_gamma: 0.0   # deprecated; 10.0 restores old behaviour
+      unreachable_pos_weight: auto   # or a number; 1.0 disables balancing
+      max_pos_weight: 10.0           #
+      pos_weight_momentum: 0.99      # 0.0 = per-batch estimate (legacy)
+
+      reachability_sources: ref      # ref_and_gen only if some OV buses are connecte to grid-forming DG
+      input_state_threshold: 0.5     # tau for the 0/1 status and contingency flags
+      topology_confidence_gamma: 0.0 # gamma of topology confidence
+
   accelerator: auto
   devices: auto
   strategy: auto
