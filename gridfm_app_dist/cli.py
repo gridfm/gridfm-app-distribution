@@ -486,6 +486,5 @@ def main_cli(args):
                     "--evaluate is only implemented for the VoltageLossDetection task.",
                 )
             elif hasattr(model, "_run_evaluation"):
-                # Same evaluator the test path uses (metrics + figures, logged to
-                # MLflow when an MLflow logger is active).
+                # Same evaluator the test path uses (metrics + figures, logged to MLflow when an MLflow logger is active).
                 model._run_evaluation(df, os.path.join(output_dir, f"{grid_name}_eval"))

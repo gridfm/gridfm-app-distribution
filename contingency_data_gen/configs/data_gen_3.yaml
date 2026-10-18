@@ -1,0 +1,55 @@
+# =============================================================================
+# Scenario-generation config for contingency_data_gen
+# =============================================================================
+# Runs one or more ScenarioGenerator jobs sequentially. Each item in
+# `scenarios:` is a self-contained job that loads a network, runs the
+# contingency analysis, and writes to partitioned parquet files
+# (bus_data.parquet / gen_data.parquet / branch_data.parquet) in
+# <output_dir>/raw/.
+#
+# Run with:   contingency_data_gen --config <this file>
+# =============================================================================
+
+# Defaults to be set
+defaults:
+  flag: 1                     # 1/2/3 = load from Excel (method 1/2/3); null = use in-memory pandapower net
+  max_n_level: 3              # contingency depth: N-1, up to N-max_n_level
+  max_size: 500               # max memory per worker batch (MB); the scenario count per batch is derived from it
+  n_scenario_per_partition: 200   # datakit scenario_partition size (parquet partitioning)
+  run_summary: true           # print get_results_summary() after each job
+  run_validation: true        # print validate_generated_data() after each job
+  continue_on_error: true     # if a job fails, log and move on to the next
+
+# Details of the scenario
+# Add each scenario separately
+scenarios:
+  - name: European_LV # European LV Test network to N-2
+    network_file_path: networks/European_LV.xlsx
+    flag: 3
+    output_dir: data/scenario_European_LV
+    max_n_level: 2
+    max_size: 500
+
+  - name: suburban_MVLV # suburban_MVLV to N-3
+    network_file_path: null
+    flag: null
+    output_dir: data/scenario_suburban_MVLV
+    max_n_level: 3
+    max_size: 500
+    builtin_network: "netbuilder/suburban_MVLV.yaml"
+
+  - name: rural_MVLV # rural_MVLV to N-3
+    network_file_path: null
+    flag: null
+    output_dir: data/scenario_rural_MVLV
+    max_n_level: 3
+    max_size: 500
+    builtin_network: "netbuilder/rural_MVLV.yaml"
+
+  - name: urban_MVLV # # urban_MVLV to N-2
+    network_file_path: null
+    flag: null
+    output_dir: data/scenario_urban_LV
+    max_n_level: 3
+    max_size: 500
+    builtin_network: "netbuilder/urban_LV.yaml"

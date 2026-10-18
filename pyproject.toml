@@ -3,8 +3,17 @@ requires = ["setuptools >= 83.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["gridfm_app_dist*"]
+include = ["gridfm_app_dist*", "contingency_data_gen*"]
 namespaces = false
+
+[tool.setuptools.package-data]
+# Shipped generation configs and network definitions (YAML, Excel, MATPOWER).
+contingency_data_gen = [
+    "configs/*.yaml",
+    "configs/networks/*.xlsx",
+    "configs/networks/*.m",
+    "configs/netbuilder/*.yaml",
+]
 
 [project]
 name = "gridfm-app-distribution"
@@ -52,7 +61,12 @@ dependencies = [
     "gdown>=6.0.0",
     "gridfm-datakit==1.1.0",
     "pyarrow>=23.0.1", #Added
-	"scikit-learn"
+    "scikit-learn",
+    # contingency_data_gen (scenario / contingency data generation)
+    "pandapower>=2.13",
+    "openpyxl>=3.1",
+    "psutil",
+    "tqdm",
 ]
 [project.optional-dependencies]
 dev = [
@@ -80,3 +94,9 @@ test = [
 
 [project.scripts]
 gridfm_app_dist = "gridfm_app_dist.__main__:main"
+contingency_data_gen = "contingency_data_gen.__main__:main"
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: tests that run a real (tiny) contingency analysis; deselect with -m 'not slow'",
+]

@@ -43,6 +43,39 @@ pip install "gridfm-app-distribution[dev,test]"
 ```
 
 
+# Generating training data (`contingency_data_gen`)
+
+The repository ships a second application, `contingency_data_gen`, that builds
+distribution networks and runs N-k contingency analyses with pandapower, writing
+the results as gridfm-datakit-format partitioned parquet under
+`<output_dir>/raw/` (`bus_data`, `gen_data`, `branch_data`). That is the layout
+`gridfm_app_dist` reads from `--data_path`, so generation chains directly into
+training:
+
+```
+contingency_data_gen --config data_gen_1.yaml          # writes data/scenario_33radial/raw/, ...
+gridfm_app_dist train --config configs/scenario_33radial.yaml --data_path data
+```
+
+Jobs are described in a YAML config (one entry per scenario). Networks can come
+from an Excel workbook (`flag: 1|2|3`, `network_file_path`), a YAML network
+definition built with the bundled `netlib` builder (`flag: 9`,
+`builtin_network: netbuilder/urban_LV.yaml`), a MATPOWER file (`flag: 10`) or a
+`pandapower.networks` factory (`flag: null`, `builtin_network: case33bw`).
+Relative paths resolve against the config's folder and then the package's
+`configs/` folder; `output_dir` resolves against the working directory.
+
+```
+contingency_data_gen --list-configs                      # configs shipped with the package
+contingency_data_gen --config my_jobs.yaml --dry-run     # validate and print the plan
+contingency_data_gen --config data_gen_1.yaml --only case33radial
+```
+
+Network builder examples (`examples/datakit/`) show how to assemble MV/LV
+networks from the standard-type catalogue in `contingency_data_gen.netlib`.
+
+---
+
 # CLI commands
 
 Interface to train, fine-tune, evaluate, and run inference on GridFM models of distribution networks using YAML configs and MLflow tracking.

@@ -1,0 +1,524 @@
+# ============================================================
+#   Network input data - suburban_MVLV
+#   Consumed by netlib.NetworkBuilder (see README.md for the schema)
+# ============================================================
+# scenario     : label written to net.name
+# std_types    : line / trafo std type names resolved from netlib.std_libraries
+# mv           : MV sections, bus counts per voltage level, switches, lines, trafos
+# lv           : one LV network template, replicated below every secondary substation
+# load_points  : ADMD per customer, power factor, customers per LV bus
+# options      : lp_placement, run_diagnostic, run_powerflow, mv_bus_index_start
+# ------------------------------------------------------------
+scenario: Full MV/LV Network - Suburban
+std_types:
+  line:
+  - D_95
+  - E_70
+  - H_95
+  - L_35
+  - R_150
+  - S_100
+  trafo:
+  - trafo_11_400_200
+  - trafo_33_11_5
+mv:
+  v_ref: 1.0
+  slack_bus: 1
+  sections:
+    main_substation: 1
+    main_trunk_feeder: 2
+    feeder: 15
+  voltage_levels:
+    MV_33kV: 33.0
+    MV_11kV: 11.0
+  bus_counts:
+    MV_33kV_main_substation:
+    - 3
+    MV_33kV_main_trunk_feeder: []
+    MV_33kV_feeder: []
+    MV_11kV_main_substation:
+    - 3
+    MV_11kV_main_trunk_feeder:
+    - 16
+    - 8
+    MV_11kV_feeder:
+    - 7
+    - 5
+    - 2
+    - 6
+    - 15
+    - 2
+    - 11
+    - 2
+    - 5
+    - 2
+    - 4
+    - 2
+    - 5
+    - 2
+    - 4
+  feeder_buses:
+  - 8
+  - 9
+  - 10
+  - 11
+  - 12
+  - 13
+  - 15
+  - 16
+  - 17
+  - 19
+  - 20
+  - 24
+  - 25
+  - 27
+  - 28
+  circuit_breakers:
+    Main_substation:
+    - - 1
+      - 2
+    - - 1
+      - 3
+    - - 4
+      - 6
+    - - 5
+      - 6
+    Main_trunk_feeder1:
+    - - 6
+      - 7
+    - - 13
+      - 14
+    - - 17
+      - 18
+    Main_trunk_feeder2:
+    - - 6
+      - 23
+    - - 23
+      - 27
+    LV:
+    - - null
+      - 0
+  fuses:
+    Main_trunk_feeder1:
+    - - 21
+      - 22
+    Main_trunk_feeder2:
+    - - 29
+      - 30
+    feeder1:
+    - - 8
+      - 81
+    - - 86
+      - 87
+    feeder2:
+    - - 9
+      - 91
+    feeder3:
+    - - 10
+      - 101
+    feeder4:
+    - - 11
+      - 111
+    - - 115
+      - 116
+    feeder5:
+    - - 12
+      - 121
+    - - 122
+      - 123
+    - - 127
+      - 128
+    - - 129
+      - 1210
+    - - 1214
+      - 1215
+    feeder6:
+    - - 13
+      - 131
+    feeder7:
+    - - 15
+      - 151
+    - - 152
+      - 153
+    - - 156
+      - 157
+    - - 155
+      - 158
+    - - 1510
+      - 1511
+    feeder8:
+    - - 16
+      - 161
+    feeder9:
+    - - 17
+      - 171
+    feeder10:
+    - - 19
+      - 191
+    feeder11:
+    - - 20
+      - 201
+    - - 203
+      - 204
+    feeder12:
+    - - 24
+      - 241
+    feeder13:
+    - - 25
+      - 251
+    feeder14:
+    - - 27
+      - 271
+    feeder15:
+    - - 28
+      - 281
+  lines:
+    R_150:
+      0.05:
+        Main_trunk_feeder1:
+        - - 7
+          - 8
+        - - 8
+          - 9
+        - - 9
+          - 10
+        - - 10
+          - 11
+        - - 11
+          - 12
+        - - 12
+          - 13
+        - - 14
+          - 15
+        - - 15
+          - 16
+        - - 16
+          - 17
+        - - 18
+          - 19
+        - - 19
+          - 20
+        - - 20
+          - 21
+        Main_trunk_feeder2:
+        - - 23
+          - 24
+        - - 24
+          - 25
+        - - 25
+          - 26
+        - - 27
+          - 28
+        - - 28
+          - 29
+        feeder1:
+        - - 81
+          - 82
+        - - 82
+          - 83
+        feeder4:
+        - - 111
+          - 112
+        - - 112
+          - 113
+        feeder5:
+        - - 121
+          - 122
+        - - 122
+          - 126
+        - - 126
+          - 129
+        - - 1210
+          - 1211
+        feeder7:
+        - - 151
+          - 152
+      0.08:
+        feeder7:
+        - - 152
+          - 155
+    S_100:
+      0.05:
+        feeder1:
+        - - 83
+          - 84
+        - - 83
+          - 85
+        - - 85
+          - 86
+        feeder2:
+        - - 91
+          - 92
+        - - 92
+          - 93
+        - - 93
+          - 94
+        - - 93
+          - 95
+        feeder4:
+        - - 113
+          - 114
+        - - 113
+          - 115
+        feeder5:
+        - - 123
+          - 124
+        - - 124
+          - 125
+        - - 126
+          - 127
+        - - 1211
+          - 1212
+        - - 1211
+          - 1213
+        feeder7:
+        - - 153
+          - 154
+        - - 155
+          - 156
+        - - 158
+          - 159
+        feeder9:
+        - - 171
+          - 172
+        - - 172
+          - 173
+        - - 173
+          - 174
+        - - 173
+          - 175
+        feeder13:
+        - - 251
+          - 252
+        - - 252
+          - 253
+        - - 253
+          - 254
+        - - 253
+          - 255
+        feeder15:
+        - - 281
+          - 282
+        - - 282
+          - 283
+        - - 283
+          - 284
+      0.08:
+        feeder3:
+        - - 101
+          - 102
+        feeder5:
+        - - 1213
+          - 1214
+        feeder6:
+        - - 131
+          - 132
+        feeder7:
+        - - 152
+          - 155
+        - - 159
+          - 1510
+        feeder8:
+        - - 161
+          - 162
+        feeder10:
+        - - 191
+          - 192
+        feeder11:
+        - - 201
+          - 202
+        - - 202
+          - 203
+        feeder12:
+        - - 241
+          - 242
+        feeder14:
+        - - 271
+          - 272
+  trafos:
+    trafo_33_11_5:
+    - - 2
+      - 4
+    - - 3
+      - 5
+lv:
+  buses_mv_per_network: 1
+  buses_lv_per_network: 42
+  voltage_levels:
+    MV_11kV: 11.0
+    LV: 0.4
+  sec_substations:
+  - 22
+  - 30
+  - 82
+  - 84
+  - 85
+  - 87
+  - 92
+  - 93
+  - 94
+  - 95
+  - 102
+  - 112
+  - 114
+  - 116
+  - 124
+  - 125
+  - 128
+  - 1210
+  - 1212
+  - 1213
+  - 1215
+  - 132
+  - 154
+  - 157
+  - 159
+  - 1511
+  - 162
+  - 172
+  - 173
+  - 174
+  - 175
+  - 192
+  - 201
+  - 202
+  - 204
+  - 242
+  - 252
+  - 253
+  - 254
+  - 255
+  - 272
+  - 282
+  - 283
+  - 284
+  sec_substations_reduced: []
+  sec_substations_reduced_main_trunk_feeder: []
+  feeder_buses_lvnetworks: []
+  circuit_breakers:
+  - - 2
+    - 3
+  - - 2
+    - 8
+  fuses:
+  - - 1
+    - 2
+  - - 4
+    - 14
+  - - 5
+    - 17
+  - - 6
+    - 21
+  - - 7
+    - 24
+  - - 9
+    - 27
+  - - 10
+    - 30
+  - - 11
+    - 34
+  - - 12
+    - 37
+  - - 13
+    - 40
+  lines:
+    H_95:
+      0.03:
+      - - 3
+        - 4
+      - - 4
+        - 5
+      - - 8
+        - 9
+      - - 9
+        - 10
+      - - 12
+        - 13
+      0.06:
+      - - 5
+        - 6
+      - - 6
+        - 7
+      - - 10
+        - 11
+      0.09:
+      - - 11
+        - 12
+    D_95:
+      0.06:
+      - - 17
+        - 18
+      0.09:
+      - - 30
+        - 31
+    E_70:
+      0.03:
+      - - 14
+        - 15
+      - - 18
+        - 19
+      - - 21
+        - 22
+      - - 24
+        - 25
+      - - 27
+        - 28
+      - - 31
+        - 32
+      - - 34
+        - 35
+      - - 37
+        - 38
+      - - 40
+        - 41
+    L_35:
+      0.035:
+      - - 15
+        - 16
+      - - 19
+        - 20
+      - - 22
+        - 23
+      - - 25
+        - 26
+      - - 28
+        - 29
+      - - 32
+        - 33
+      - - 35
+        - 36
+      - - 38
+        - 39
+      - - 41
+        - 42
+  trafos:
+    trafo_11_400_200:
+    - - 0
+      - 1
+load_points:
+  lp_per_customer: 0.00227
+  power_factor: 0.98
+  loads:
+  - bus: 16
+    customers: 6
+  - bus: 20
+    customers: 11
+  - bus: 23
+    customers: 13
+  - bus: 26
+    customers: 4
+  - bus: 29
+    customers: 5
+  - bus: 33
+    customers: 16
+  - bus: 36
+    customers: 10
+  - bus: 39
+    customers: 3
+  - bus: 42
+    customers: 8
+options:
+  lp_placement:
+  - lv
+  run_diagnostic: true
+  run_powerflow: true

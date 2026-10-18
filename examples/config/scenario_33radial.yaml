@@ -22,6 +22,16 @@ model:
   output_gen_dim: 1
   num_layers: 24
 
+  # --- Optional model features ---
+  head_mode: split        # stream width = hidden_size, not hidden_size * heads
+  norm_position: pre
+  residual_mode: always
+  physics_gate: true
+  physics_gate_init: 1.0
+  ffn_ratio: 0.0          # Option is 2.0
+  topology_gating: none   # Option is message_mask as a separate A/B
+  model_version: 0        # Model checkpoint
+
 training:
   batch_size: 64
   epochs: 100
@@ -71,4 +81,4 @@ evaluation:                        # VLD metrics + figures after test / predict 
   primary_cost_weights: [3, 1]             # ratio used for the "cost" operating point
   calib_frac: 0.3                          # scenarios held out to pick the cost threshold
   n_boot: 1000                             # cluster-bootstrap draws for 95 % intervals
-  seed: 42
+  seed: 0 # seed for randomly selecting the scenarios for the cost threshold
