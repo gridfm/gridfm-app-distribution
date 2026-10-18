@@ -44,7 +44,9 @@ from contingency_data_gen.generation.excel_pandapower import (  # noqa: F401
     run_load_flow_and_display_results,
 )
 from contingency_data_gen.generation.excel_pandapower_2 import ExcelToPandapowerImporter
-from contingency_data_gen.generation.excel_pandapower_3 import ExcelToPandapowerImporter2
+from contingency_data_gen.generation.excel_pandapower_3 import (
+    ExcelToPandapowerImporter2,
+)
 
 # Global variable inside worker processes
 _worker_generator = None
@@ -67,7 +69,7 @@ def worker_initializer(network_file_path, flag, panda_net, output_dir, name):
 
 # Execution process inside each worker. Network already loaded
 def process_batch_worker(n_level, scenarios_batch, batch_count, scenario_start_idx):
-    global _worker_generator
+    # global _worker_generator
     bus_results, gen_results, branch_results = (
         _worker_generator.run_batch_contingency_analysis(
             n_level,
@@ -822,9 +824,7 @@ class ScenarioGenerator:
                 for scenarios_batch in batch_generator:
                     while len(futures) >= max_inflight:
                         done = futures.pop(0)
-                        _meta = (
-                            done.result()
-                        )  # ensure exceptions are raised and cleared
+                        done.result()  # ensure exceptions are raised and cleared
                     batch_index = self.global_batch_counter
                     futures.append(
                         executor.submit(
@@ -839,7 +839,7 @@ class ScenarioGenerator:
                     global_scenario_counter += len(scenarios_batch)
                     total_batches_processed += 1
             for future in futures:
-                _meta = future.result()  # drain remaining
+                future.result()  # drain remaining
 
         self.total_batches_processed = total_batches_processed
         self.time_taken = time.time() - start_time

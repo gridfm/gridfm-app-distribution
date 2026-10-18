@@ -71,8 +71,19 @@ def test_tiny_n1_generation_writes_datakit_parquet(tmp_path, monkeypatch):
     result = run_job(job)
     assert result["ok"]
     raw = out / "raw"
-    for name in ("bus_data.parquet", "gen_data.parquet", "branch_data.parquet"):
+    for name in ("bus_data.parquet", "branch_data.parquet"):
         assert (raw / name).exists(), f"{name} missing"
     bus = pd.read_parquet(raw / "bus_data.parquet")
     assert {"scenario", "scenario_partition"} <= set(bus.columns)
     assert bus["scenario"].nunique() > 1
+    assert (bus["scenario"] // 10 == bus["scenario_partition"]).all()
+
+    # case33bw has no generators (ext_grid only). The writer then leaves
+    # gen_data.parquet absent and the model treats the dataset as
+    # generator-free, so the file must be missing-or-empty, never partial.
+    from contingency_data_gen.generation import datakit_writer as dkw
+
+    gen = dkw.read_dataset(str(raw), "gen")
+    assert gen.empty
+    if (raw / "gen_data.parquet").exists():
+        assert pd.read_parquet(raw / "gen_data.parquet").empty

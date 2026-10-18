@@ -268,10 +268,15 @@ def main():
         action="store_true",
     )
     evaluate_parser.add_argument(
+        "--no-evaluate",
+        dest="no_evaluate",
+        action="store_true",
+        help="VLD only: skip the automatic metrics/figures step after predictions.",
+    )
+    evaluate_parser.add_argument(
         "--evaluate",
         action="store_true",
-        help="VLD only: write classification metrics and figures next to the "
-        "saved predictions (implies --save_output).",
+        help="Force the metrics/figures step (VLD runs it by default; implies --save_output).",
     )
 
     # ---- PREDICT SUBCOMMAND ----
@@ -309,10 +314,15 @@ def main():
     )
     predict_parser.add_argument("--output_path", type=str, default="data")
     predict_parser.add_argument(
+        "--no-evaluate",
+        dest="no_evaluate",
+        action="store_true",
+        help="VLD only: skip the automatic metrics/figures step after predictions.",
+    )
+    predict_parser.add_argument(
         "--evaluate",
         action="store_true",
-        help="VLD only: write classification metrics and figures next to the "
-        "prediction parquet.",
+        help="Force the metrics/figures step (VLD runs it by default).",
     )
     predict_parser.add_argument("--compile", **_compile_kwargs)
     predict_parser.add_argument("--bfloat16", **_bfloat16_kwargs)

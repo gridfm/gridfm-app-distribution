@@ -439,7 +439,13 @@ def main_cli(args):
             print(f"\nComputing ground-truth AC/DC metrics for {grid_name}...")
             compute_ac_dc_metrics(artifacts_dir, raw_dir, grid_name, sn_mva)
 
-    run_evaluation = getattr(args, "evaluate", False)
+    # VLD: evaluate every saved prediction set by default (metrics + figures next
+    # to the parquet); --no-evaluate or evaluation.enabled: false switches it off.
+    # Other tasks: only on explicit --evaluate.
+    is_vld = config_args.task.task_name == "VoltageLossDetection"
+    run_evaluation = (
+        is_vld and not getattr(args, "no_evaluate", False)
+    ) or getattr(args, "evaluate", False)
     save_output = (
         getattr(args, "save_output", False)
         or args.command == "predict"
@@ -481,7 +487,7 @@ def main_cli(args):
         print(f"Saved predictions to {out_path}")
 
         if run_evaluation:
-            if config_args.task.task_name != "VoltageLossDetection":
+            if not is_vld:
                 print(
                     "--evaluate is only implemented for the VoltageLossDetection task.",
                 )

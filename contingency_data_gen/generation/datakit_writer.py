@@ -47,9 +47,11 @@ def _append_partitioned(df: pd.DataFrame, dataset_dir: str, batch_id: int) -> No
     """Write `df` into `dataset_dir`, one file per scenario_partition value.
     Filenames embed the batch id and a unique id so concurrent workers never clash.
     """
-    # Skip if the gen dataframe was not created - GridFM model needs the generator.parquet file
-    # so ensure it is created empty with the right column names Even if there are gens in the network
-    if df is None and df.empty:
+    # Nothing to write for a missing or empty frame. For a network without
+    # generators this leaves gen_data.parquet absent, which HeteroGridDatasetDisk
+    # and the normalizers treat as "generator-free" (they build an empty gen
+    # node set). The old test `df is None and df.empty` raised on None.
+    if df is None or df.empty:
         return
 
     df = _add_partition(df)
