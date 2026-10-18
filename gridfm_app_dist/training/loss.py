@@ -533,15 +533,11 @@ class VLDTopologyLoss(BaseLoss):
         Decision threshold theta = 1 / (1 + w_off) for the status probability,
         or ``None`` when no training-time w_off is available.
 
-        Weighting the 0-class by w moves the BCE optimum from the posterior q to
-        q / (q + w (1 - q)); thresholding at 1 / (1 + w) maps it back to q = 0.5.
-        This is the threshold the loss uses for its own metrics and the one the
-        task must apply at test / predict time. It is derived from the fixed
-        ``unreachable_pos_weight`` when one is configured, otherwise from the
-        EMA buffer ``ema_off_weight`` (saved in the checkpoint). ``None`` means
-        the EMA was never initialised (an old checkpoint, or
-        ``pos_weight_momentum == 0``); callers should then fall back to the
-        per-batch value returned as "VLD Decision Threshold".
+        Weighting the 0-class by w moves the BCE optimum from the posterior q to q / (q + w (1 - q)); thresholding at 1 / (1 + w) maps it back to q = 0.5.
+        This is the threshold the loss uses for its own metrics and the one the task must apply at test / predict time.
+        It is derived from the fixed ``unreachable_pos_weight`` when one is configured, otherwise from the EMA buffer ``ema_off_weight`` (saved in the checkpoint).
+        ``None`` means the EMA was never initialised (an old checkpoint, or ``pos_weight_momentum == 0``);
+        callers should then fall back to the per-batch value returned as "VLD Decision Threshold".
         """
         if self.unreachable_pos_weight != "auto":
             w = max(float(self.unreachable_pos_weight), 1.0)
@@ -689,7 +685,6 @@ class VLDTopologyLoss(BaseLoss):
             off_weight.expand_as(target_status),
             ones,
         )
-
         topology_bce_raw = F.binary_cross_entropy_with_logits(
             status_logit,
             topo_target,

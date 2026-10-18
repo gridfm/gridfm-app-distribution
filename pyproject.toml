@@ -52,7 +52,7 @@ dependencies = [
     "gdown>=6.0.0",
     "gridfm-datakit==1.1.0",
     "pyarrow>=23.0.1", #Added
-    # Added from url to match torch version "torch-scatter>=2.1.2",
+	"scikit-learn"
 ]
 [project.optional-dependencies]
 dev = [

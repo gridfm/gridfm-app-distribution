@@ -64,3 +64,11 @@ callbacks:
 
 task:
   task_name: VoltageLossDetection
+
+evaluation:                        # VLD metrics + figures after test / predict --evaluate
+  enabled: true
+  cost_weights: [[1, 1], [3, 1], [5, 1]]   # c_missed_outage : c_false_alarm ratios drawn
+  primary_cost_weights: [3, 1]             # ratio used for the "cost" operating point
+  calib_frac: 0.3                          # scenarios held out to pick the cost threshold
+  n_boot: 1000                             # cluster-bootstrap draws for 95 % intervals
+  seed: 42

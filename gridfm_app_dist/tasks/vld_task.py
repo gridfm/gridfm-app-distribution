@@ -7,6 +7,7 @@ from lightning.pytorch.loggers import MLFlowLogger
 from gridfm_app_dist.io.registries import TASK_REGISTRY
 from gridfm_app_dist.tasks.reconstruction_tasks import ReconstructionTask
 from gridfm_app_dist.training.loss import VLDTopologyLoss
+from gridfm_app_dist.io.vld_evaluation import evaluate_vld_predictions
 from gridfm_app_dist.datasets.globals import (
     VM_OUT,
     VM_H,
@@ -29,16 +30,13 @@ class VoltageLossDetectionTask(ReconstructionTask):
 
     def _decision_threshold(self, loss_dict):
         """
-        Threshold on the status probability above which a bus is called
-        energised. The loss is trained with the de-energised class up-weighted
-        by w_off, which moves its optimum away from the posterior, so the
-        matching threshold is 1 / (1 + w_off), not 0.5 (and never a fixed 0.9).
+        Threshold on the status probability above which a bus is called energised.
+        The loss is trained with the de-energised class up-weighted by w_off,
+        which moves its optimum away from the posterior, so the matching threshold is 1 / (1 + w_off)
 
         Preference order:
-          1. the training-time w_off stored in the VLDTopologyLoss EMA buffer
-             (restored from the checkpoint with the rest of the state dict);
-          2. the per-batch value the loss just computed ("VLD Decision
-             Threshold"), used when no EMA is available;
+          1. the training-time w_off stored in the VLDTopologyLoss EMA buffer (restored from the checkpoint with the rest of the state dict);
+          2. the per-batch value the loss just computed ("VLD Decision Threshold"), used when no EMA is available;
           3. 0.5, if the configured losses contain no VLDTopologyLoss at all.
         """
         for loss_fn in getattr(self.loss_fn, "loss_functions", []):
@@ -67,9 +65,8 @@ class VoltageLossDetectionTask(ReconstructionTask):
         vm_pred = bus_pred[:, VM_OUT]
         vm_true = bus_target[:, VM_H]
 
-        # Classification metrics (accuracy, off recall / precision / F1, on
-        # recall, balanced accuracy) are already in loss_dict, computed by the
-        # loss at the same threshold. Only the voltage metrics are added here.
+        # Classification metrics (accuracy, off recall / precision / F1, on recall, balanced accuracy) are already in loss_dict,
+        # computed by the loss at the same threshold. Only the voltage metrics are added here.
         off_mask = status_true < 0.5
         on_mask = status_true >= 0.5
 
@@ -86,7 +83,6 @@ class VoltageLossDetectionTask(ReconstructionTask):
 
         loss_dict["OFF Vm MAE"] = off_vm_mae.detach()
         loss_dict["ON Vm RMSE"] = on_vm_rmse.detach()
-
         loss_dict["Test loss"] = loss_dict.pop("loss").detach()
 
         for metric, value in loss_dict.items():
@@ -100,9 +96,17 @@ class VoltageLossDetectionTask(ReconstructionTask):
                 logger=False,
             )
 
+        bus_batch = batch.batch_dict["bus"]
+        scenario_ids = batch["scenario_id"][bus_batch]
+        local_bus_idx = torch.cat(
+            [torch.arange(c, device=bus_batch.device) for c in torch.bincount(bus_batch)],
+        )
+
         self.test_outputs[dataloader_idx].append(
             {
                 "dataset": dataset_name,
+                "scenario": scenario_ids.detach().cpu(),
+                "bus": local_bus_idx.detach().cpu(),
                 "status_prob": status_prob.detach().cpu(),
                 "status_pred": status_pred.detach().cpu(),
                 "status_true": status_true.detach().cpu(),
@@ -145,6 +149,8 @@ class VoltageLossDetectionTask(ReconstructionTask):
                 continue
 
             dataset_name = self.args.data.networks[dataset_idx]
+            scenario = torch.cat([o["scenario"] for o in outputs]).numpy()
+            bus = torch.cat([o["bus"] for o in outputs]).numpy()
             status_prob = torch.cat([o["status_prob"] for o in outputs]).numpy()
             status_pred = torch.cat([o["status_pred"] for o in outputs]).numpy()
             status_true = torch.cat([o["status_true"] for o in outputs]).numpy()
@@ -154,6 +160,8 @@ class VoltageLossDetectionTask(ReconstructionTask):
 
             df = pd.DataFrame(
                 {
+                    "scenario": scenario,
+                    "bus": bus,
                     "status_prob": status_prob,
                     "status_pred": status_pred,
                     "status_true": status_true,
@@ -166,8 +174,55 @@ class VoltageLossDetectionTask(ReconstructionTask):
                 os.path.join(test_dir, f"{dataset_name}_vld_predictions.csv"),
                 index=False,
             )
+            self._run_evaluation(df, os.path.join(test_dir, f"{dataset_name}_eval"))
 
         self.test_outputs.clear()
+
+    def _run_evaluation(self, df, out_dir):
+        """
+        Metrics + figures for the predictions in ``df`` (see
+        ``io.vld_evaluation``). The model operating point is the threshold the
+        task used; the cost-optimal comparison threshold is chosen on a
+        scenario-wise hold-out of the same predictions (or on the parquet named
+        by ``evaluation.calibration_predictions`` if configured). Settings come
+        from an optional ``evaluation:`` block in the config; all have defaults.
+        """
+        ev = getattr(self.args, "evaluation", None)
+        if ev is not None and not getattr(ev, "enabled", True):
+            return None
+        kwargs = {}
+        if ev is not None:
+            for name in ("cost_weights", "primary_cost_weights", "calib_frac", "n_boot", "seed"):
+                if getattr(ev, name, None) is not None:
+                    kwargs[name] = getattr(ev, name)
+            calib_path = getattr(ev, "calibration_predictions", None)
+            if calib_path:
+                kwargs["calib_df"] = (
+                    pd.read_csv(calib_path)
+                    if str(calib_path).lower().endswith(".csv")
+                    else pd.read_parquet(calib_path)
+                )
+        try:
+            metrics = evaluate_vld_predictions(
+                df,
+                out_dir,
+                model_threshold=float(df["threshold"].iloc[0]),
+                **kwargs,
+            )
+        except Exception as exc:  # evaluation must never break a test run
+            print(f"[VLD evaluation] skipped: {exc!r}")
+            return None
+
+        if isinstance(self.logger, MLFlowLogger):
+            scalar = {
+                f"eval/{k}": float(v)
+                for k, v in metrics.items()
+                if isinstance(v, (int, float)) and v == v
+            }
+            self.logger.log_metrics(scalar)
+            self.logger.experiment.log_artifacts(self.logger.run_id, out_dir)
+        print(f"[VLD evaluation] figures and metrics written to {out_dir}")
+        return metrics
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         output, loss_dict = self.shared_step(batch)
@@ -190,6 +245,7 @@ class VoltageLossDetectionTask(ReconstructionTask):
             "scenario": scenario_ids.cpu().numpy(),
             "bus": local_bus_idx.cpu().numpy(),
             "vm_pred": bus_pred[:, VM_OUT].detach().cpu().numpy(),
+            "vm_true": batch.y_dict["bus"][:, VM_H].detach().cpu().numpy(),
             "status_prob": status_prob.detach().cpu().numpy(),
             "status_pred": (status_prob >= threshold).float().detach().cpu().numpy(),
             "threshold": torch.full_like(status_prob, threshold).detach().cpu().numpy(),

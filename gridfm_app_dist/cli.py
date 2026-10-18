@@ -343,23 +343,16 @@ def main_cli(args):
         load_result = model.load_state_dict(state_dict, strict=False)
         if load_result.missing_keys:
             print(
-                "Warning: checkpoint is missing "
-                f"{len(load_result.missing_keys)} key(s): "
-                f"{load_result.missing_keys}",
+                f"Warning: checkpoint is missing {len(load_result.missing_keys)} key(s):{load_result.missing_keys}",
             )
         if load_result.unexpected_keys:
             print(
-                "Warning: checkpoint has "
-                f"{len(load_result.unexpected_keys)} unexpected key(s): "
-                f"{load_result.unexpected_keys}",
+                f"Warning: checkpoint has {len(load_result.unexpected_keys)} unexpected key(s): {load_result.unexpected_keys}",
             )
-        model_keys = [
-            k for k in load_result.missing_keys if k.startswith("model.")
-        ]
+        model_keys = [k for k in load_result.missing_keys if k.startswith("model.")]
         if model_keys:
             raise RuntimeError(
-                "Checkpoint does not match the model architecture; missing "
-                f"model weights: {model_keys}",
+                f"Checkpoint does not match the model architecture; missing model weights: {model_keys}",
             )
 
     precision = "bf16-true" if getattr(args, "bfloat16", False) else None
@@ -446,7 +439,12 @@ def main_cli(args):
             print(f"\nComputing ground-truth AC/DC metrics for {grid_name}...")
             compute_ac_dc_metrics(artifacts_dir, raw_dir, grid_name, sn_mva)
 
-    save_output = getattr(args, "save_output", False) or args.command == "predict"
+    run_evaluation = getattr(args, "evaluate", False)
+    save_output = (
+        getattr(args, "save_output", False)
+        or args.command == "predict"
+        or run_evaluation
+    )
     if save_output:
         if len(config_args.data.networks) > 1:
             raise NotImplementedError(
@@ -481,3 +479,11 @@ def main_cli(args):
         out_path = os.path.join(output_dir, f"{grid_name}_predictions.parquet")
         df.to_parquet(out_path, index=False)
         print(f"Saved predictions to {out_path}")
+
+        if run_evaluation:
+            if config_args.task.task_name != "VoltageLossDetection":
+                print("--evaluate is only implemented for the VoltageLossDetection task.")
+            elif hasattr(model, "_run_evaluation"):
+                # Same evaluator the test path uses (metrics + figures, logged to
+                # MLflow when an MLflow logger is active).
+                model._run_evaluation(df, os.path.join(output_dir, f"{grid_name}_eval"))

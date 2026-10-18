@@ -267,6 +267,12 @@ def main():
         "--save_output",
         action="store_true",
     )
+    evaluate_parser.add_argument(
+        "--evaluate",
+        action="store_true",
+        help="VLD only: write classification metrics and figures next to the "
+        "saved predictions (implies --save_output).",
+    )
 
     # ---- PREDICT SUBCOMMAND ----
     predict_parser = subparsers.add_parser("predict", help="Run prediction")
@@ -302,6 +308,12 @@ def main():
         help="Directory for the dataset wrapper's disk cache. If set, cache is loaded from here when present and saved here after first population.",
     )
     predict_parser.add_argument("--output_path", type=str, default="data")
+    predict_parser.add_argument(
+        "--evaluate",
+        action="store_true",
+        help="VLD only: write classification metrics and figures next to the "
+        "prediction parquet.",
+    )
     predict_parser.add_argument("--compile", **_compile_kwargs)
     predict_parser.add_argument("--bfloat16", **_bfloat16_kwargs)
     predict_parser.add_argument("--tf32", **_tf32_kwargs)
