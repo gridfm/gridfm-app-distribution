@@ -243,7 +243,6 @@ def visualize_quantity_heatmap(
         ax=ax,
     )
     ax.set_title(f"Masked {quantity_name}", fontsize=14, fontweight="bold")
-
     for spine in ax.spines.values():
         spine.set_linewidth(2)  # Adjust thickness
 
@@ -276,7 +275,6 @@ def visualize_quantity_heatmap(
         ax=ax,
     )
     ax.set_title(f"Reconstructed {quantity_name}", fontsize=14, fontweight="bold")
-
     for spine in ax.spines.values():
         spine.set_linewidth(2)  # Adjust thickness
 
@@ -450,11 +448,7 @@ def plot_mass_correlation_density_voltage(
     y_bins = np.arange(y_min, y_max + bin_width, bin_width)
 
     # estimate vmax on mean count of elements across bins
-    counts, _, _ = np.histogram2d(
-        pf_node["Vm"],
-        pf_node["Vm_pred_corrected"],
-        bins=[x_bins, y_bins],
-    )
+    counts, _, _ = np.histogram2d( pf_node["Vm"], pf_node["Vm_pred_corrected"], bins=[x_bins, y_bins])
 
     counts[counts == 0] = np.nan
     means = np.nanmean(counts)

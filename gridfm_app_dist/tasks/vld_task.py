@@ -99,7 +99,10 @@ class VoltageLossDetectionTask(ReconstructionTask):
         bus_batch = batch.batch_dict["bus"]
         scenario_ids = batch["scenario_id"][bus_batch]
         local_bus_idx = torch.cat(
-            [torch.arange(c, device=bus_batch.device) for c in torch.bincount(bus_batch)],
+            [
+                torch.arange(c, device=bus_batch.device)
+                for c in torch.bincount(bus_batch)
+            ],
         )
 
         self.test_outputs[dataloader_idx].append(
@@ -192,7 +195,13 @@ class VoltageLossDetectionTask(ReconstructionTask):
             return None
         kwargs = {}
         if ev is not None:
-            for name in ("cost_weights", "primary_cost_weights", "calib_frac", "n_boot", "seed"):
+            for name in (
+                "cost_weights",
+                "primary_cost_weights",
+                "calib_frac",
+                "n_boot",
+                "seed",
+            ):
                 if getattr(ev, name, None) is not None:
                     kwargs[name] = getattr(ev, name)
             calib_path = getattr(ev, "calibration_predictions", None)

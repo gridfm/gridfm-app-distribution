@@ -482,7 +482,9 @@ def main_cli(args):
 
         if run_evaluation:
             if config_args.task.task_name != "VoltageLossDetection":
-                print("--evaluate is only implemented for the VoltageLossDetection task.")
+                print(
+                    "--evaluate is only implemented for the VoltageLossDetection task.",
+                )
             elif hasattr(model, "_run_evaluation"):
                 # Same evaluator the test path uses (metrics + figures, logged to
                 # MLflow when an MLflow logger is active).
