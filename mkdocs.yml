@@ -11,6 +11,7 @@ nav:
     - YAML configuration file: quick_start/yaml_config.md
   - Applications:
     - Contingency data generation: applications/contingency_data_gen.md
+    - VLD Colab tutorial: applications/vld_tutorial.md
     - VLD topology task: applications/VLD topology task.md
     - VLD loss parameters: applications/VLD_loss_parameters.md
     - VLD integration: applications/vld_integration.md

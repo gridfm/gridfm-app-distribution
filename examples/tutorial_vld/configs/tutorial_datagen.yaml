@@ -1,0 +1,21 @@
+# Scenario generation for the VLD tutorial.
+# Network: pandapower's built-in 33-bus radial distribution feeder (Baran & Wu),
+#   https://pandapower.readthedocs.io/en/v2.0.0/networks.html  ->  case33bw
+# N-1 and N-2 bus/branch contingencies -> ~2,000 post-contingency power flows,
+# written as gridfm-datakit parquet under data/tutorial_case33bw/raw/.
+# Run from the repository root (or the tutorial folder, see the notebook):
+#   contingency_data_gen --config examples/tutorial_vld/configs/tutorial_datagen.yaml
+
+defaults:
+  flag: null                    # null = build the network from a pandapower.networks factory
+  max_n_level: 2                # N-1 and N-2
+  max_size: 200                 # max memory per worker batch (MB); scenarios per batch derived from it
+  n_scenario_per_partition: 200
+  run_summary: true
+  run_validation: true
+  continue_on_error: false
+
+scenarios:
+  - name: tutorial_case33bw
+    builtin_network: case33bw
+    output_dir: data/tutorial_case33bw

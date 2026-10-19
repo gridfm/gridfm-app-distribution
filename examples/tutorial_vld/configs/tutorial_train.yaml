@@ -1,0 +1,66 @@
+# Small VLD training run for the tutorial ("dummy model").
+# Capacity is deliberately tiny so it trains in a few minutes on a Colab T4 or CPU.
+# The notebook sets data.scenarios to the number of generated scenarios.
+seed: 42
+
+data:
+  networks: ["tutorial_case33bw"]
+  scenarios: [2000]                 # overwritten by the notebook after generation
+  normalization: "HeteroDataMVANormalizer"
+  baseMVA: 100
+  mask_value: 0.0
+  val_ratio: 0.1
+  test_ratio: 0.1
+  workers: 0
+
+model:
+  type: GNS_heterogeneous
+  attention_head: 2
+  dropout: 0.1
+  edge_dim: 13
+  hidden_size: 32
+  input_bus_dim: 17
+  input_gen_dim: 6
+  output_bus_dim: 5
+  output_gen_dim: 1
+  num_layers: 2
+
+training:
+  batch_size: 16
+  epochs: 6
+  losses: ["VLDTopologyLoss"]       # the lesson is the VLD loss; see the joint config in examples/config
+  loss_weights: [1.0]
+  loss_args:
+    - topology_weight: 1.0          # lambda_reach
+      target_anchor_weight: 0.5     # lambda_anc
+      off_vm_weight: 1.0            # lambda_off
+      on_vm_weight: 0.5             # lambda_on
+      unreachable_l1_weight: 1.0    # lambda_1
+      unreachable_pos_weight: auto  # w_off = n_on / n_off
+      max_pos_weight: 10.0
+      pos_weight_momentum: 0.99
+      reachability_sources: ref
+      input_state_threshold: 0.5
+      topology_confidence_gamma: 0.0
+  accelerator: auto
+  devices: 1
+  strategy: auto
+
+optimizer:
+  learning_rate: 0.001
+  beta1: 0.9
+  beta2: 0.999
+  lr_decay: 0.7
+  lr_patience: 10
+
+callbacks:
+  patience: 100
+  tol: 0
+
+task:
+  task_name: VoltageLossDetection
+
+evaluation:
+  enabled: true
+  n_boot: 300
+  seed: 0

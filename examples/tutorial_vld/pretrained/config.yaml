@@ -1,0 +1,81 @@
+seed: 42
+
+data:
+  networks: ["scenario_33meshed"]   # Networks loaded as separate folders
+  scenarios: [57155]                # Number of scenarios loaded from the CSV files
+  normalization: "HeteroDataMVANormalizer"  # data normalization to pu on MVA base
+  baseMVA: 100                      # Base MVA for normalization
+  mask_value: 0.0                   # Initial value for masked parameters
+  val_ratio: 0.1                    # ratio of data for validation
+  test_ratio: 0.1                   # ratio of data for testing
+  workers: 8
+
+model:
+  type: GNS_heterogeneous           # was GPSTransformer (not available in new repo)
+  attention_head: 8
+  dropout: 0.1
+  edge_dim: 13                      # Additional edge features BRANCH_BASE_STATUS_E(11) + BRANCH_CONT_E(12)
+  hidden_size: 160
+  input_bus_dim: 17                 # Additional bus features + BUS_BASE_STATUS_H(15) + BUS_CONT_H(16)
+  input_gen_dim: 6                  # Additional generator node-type feature dim
+  output_bus_dim: 5
+  output_gen_dim: 1
+  num_layers: 24
+  
+  # --- ptional model features ---
+  head_mode: split        # stream width = hidden_size, not hidden_size * heads
+  norm_position: pre
+  residual_mode: always
+  physics_gate: true
+  physics_gate_init: 1.0
+  ffn_ratio: 0.0          # Option is 2.0
+  topology_gating: none   # Option is message_mask as a separate A/B
+  model_version: 0        # Model checkpoint
+
+training:
+  batch_size: 64
+  epochs: 100
+  losses: ["MaskedMSE", "PBE", "VLDTopologyLoss"]
+  loss_weights: [0.1, 0.4, 0.50]
+
+
+  loss_args: # parameters for tuning the loss functions
+    - {}                           # MaskedMSE tuning can be activated for fien tuning tasks
+    - {}                           # PBE tuning can be activated for fien tuning tasks
+    - # ---- VLDTopologyLoss -------------------------------------------------
+      topology_weight: 1.0           # lambda_reach (Primary BCE loss weight)
+      target_anchor_weight: 0.5      # lambda_anc  (Secondary BCE anchor loss)
+      off_vm_weight: 1.0             # lambda_off (Drives V_hat -> 0 on de-energised buses)
+      on_vm_weight: 0.5              # lambda_on (Drives V_hat by MSE on energised buses)
+      unreachable_l1_weight: 1.0     # lambda_1 (Constant pull towards 0)
+
+      unreachable_pos_weight: auto   # or a number; 1.0 disables balancing
+      max_pos_weight: 10.0           #
+      pos_weight_momentum: 0.99      # 0.0 = per-batch estimate (legacy)
+
+      reachability_sources: ref      # ref_and_gen only if some OV buses are connecte to grid-forming DG
+      input_state_threshold: 0.5     # tau for the 0/1 status and contingency flags
+      topology_confidence_gamma: 0.0 # gamma of topology confidence
+      
+  accelerator: auto
+  devices: auto
+  strategy: auto
+
+optimizer:
+  learning_rate: 0.0001
+  beta1: 0.9
+  beta2: 0.999
+  lr_decay: 0.7
+  lr_patience: 10
+
+callbacks:
+  patience: 100
+  tol: 0
+
+task:
+  task_name: VoltageLossDetection
+  
+evaluation:                        # VLD metrics + figures of the model's predictions (after test / predict)
+  enabled: true                    # --no-evaluate on the command line also switches it off
+  n_boot: 1000                     # cluster-bootstrap draws (over scenarios) for 95 % intervals
+  seed:
