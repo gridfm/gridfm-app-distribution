@@ -27,8 +27,16 @@ import os
 import uuid
 import pandas as pd
 
-# Datakit default; overridable via env for large runs.
-N_SCENARIO_PER_PARTITION = int(os.environ.get("N_SCENARIO_PER_PARTITION", "200"))
+# Datakit default; overridable via the N_SCENARIO_PER_PARTITION environment
+# variable, which the job runner sets per job. It is read at CALL time (see
+# n_scenario_per_partition()) so that a job can change it after this module
+# has been imported; reading it once at import time left every job with the
+# value in force when the module first loaded.
+DEFAULT_N_SCENARIO_PER_PARTITION = 200
+
+
+def n_scenario_per_partition() -> int:
+    return int(os.environ.get("N_SCENARIO_PER_PARTITION", DEFAULT_N_SCENARIO_PER_PARTITION))
 
 BUS_DIR = "bus_data.parquet"
 GEN_DIR = "gen_data.parquet"
@@ -37,7 +45,7 @@ BRANCH_DIR = "branch_data.parquet"
 
 def _add_partition(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    df["scenario_partition"] = (df["scenario"] // N_SCENARIO_PER_PARTITION).astype(
+    df["scenario_partition"] = (df["scenario"] // n_scenario_per_partition()).astype(
         "int64",
     )
     return df

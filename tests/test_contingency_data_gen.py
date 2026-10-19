@@ -76,7 +76,10 @@ def test_tiny_n1_generation_writes_datakit_parquet(tmp_path, monkeypatch):
     bus = pd.read_parquet(raw / "bus_data.parquet")
     assert {"scenario", "scenario_partition"} <= set(bus.columns)
     assert bus["scenario"].nunique() > 1
-    assert (bus["scenario"] // 10 == bus["scenario_partition"]).all()
+    # Hive partitioning reads scenario_partition back as a categorical.
+    partition = bus["scenario_partition"].astype(int)
+    assert (bus["scenario"] // 10 == partition).all()
+    assert partition.nunique() > 1, "all scenarios fell into one partition"
 
     # case33bw has no generators (ext_grid only). The writer then leaves
     # gen_data.parquet absent and the model treats the dataset as
