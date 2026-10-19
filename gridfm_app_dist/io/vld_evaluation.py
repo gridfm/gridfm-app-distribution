@@ -96,7 +96,6 @@ def _plt():
     ):
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-
     return plt
 
 
