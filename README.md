@@ -101,22 +101,22 @@ gridfm_app_dist --config path/to/config.yaml
 
 ### Arguments
 
-| Argument | Type | Description | Default |
-| -------- | ---- | ----------- | ------- |
-| `--config` | `str` | **Required**. Path to the training configuration YAML file. | `None` |
-| `--exp_name` | `str` | MLflow experiment name. | `timestamp` |
-| `--run_name` | `str` | MLflow run name. | `run` |
-| `--log_dir` | `str` | MLflow tracking/logging directory. | `mlruns` |
-| `--data_path` | `str` | Root dataset directory. | `data` |
-| `--compile [MODE]` | `str` | Enable `torch.compile` mode. Valid values: `default`, `reduce-overhead`, `max-autotune`, `max-autotune-no-cudagraphs`. If flag is passed without a value, mode is `default`. | `None` |
-| `--bfloat16` | `flag` | Cast model to `torch.bfloat16` (`model.to(torch.bfloat16)`). | `False` |
-| `--tf32` | `flag` | Enable TF32 on Ampere+ GPUs via `torch.set_float32_matmul_precision("high")`. | `False` |
-| `--dataset_wrapper` | `str` | Registered dataset wrapper name (see `DATASET_WRAPPER_REGISTRY`), e.g. `SharedMemoryCacheDataset`. | `None` |
-| `--plugins` | `list[str]` | Python packages to import for plugin registration, e.g. `gridfm_graphkit_ee`. | `[]` |
-| `--num_workers` | `int` | Override `data.workers` from YAML. Use `0` to debug worker crashes. | `None` |
-| `--dataset_wrapper_cache_dir` | `str` | Disk cache directory for dataset wrapper; cache is loaded from here when present and saved after first population. | `None` |
-| `--profiler` | `str` | Enable Lightning profiler (`simple`, `advanced`, `pytorch`). | `None` |
-| `--compute_dc_ac_metrics` | `flag` | Compute ground-truth AC/DC power balance metrics on the test split. | `False` |
+| Argument | Type | Description                                                                                                                                                                                                         | Default |
+| -------- | ---- |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------| ------- |
+| `--config` | `str` | **Required**. Path to the training configuration YAML file.                                                                                                                                                         | `None` |
+| `--exp_name` | `str` | MLflow experiment name.                                                                                                                                                                                             | `timestamp` |
+| `--run_name` | `str` | MLflow run name.                                                                                                                                                                                                    | `run` |
+| `--log_dir` | `str` | MLflow tracking/logging directory.                                                                                                                                                                                  | `mlruns` |
+| `--data_path` | `str` | Root dataset directory.                                                                                                                                                                                             | `data` |
+| `--compile [MODE]` | `str` | Enable `torch.compile` mode. Valid values: `default`, `reduce-overhead`, `max-autotune`, `max-autotune-no-cudagraphs`. If flag is passed without a value, mode is `default`.                                        | `None` |
+| `--bfloat16` | `flag` | Cast model to `torch.bfloat16` (`model.to(torch.bfloat16)`).                                                                                                                                                        | `False` |
+| `--tf32` | `flag` | Enable TF32 on Ampere+ GPUs via `torch.set_float32_matmul_precision("high")`.                                                                                                                                       | `False` |
+| `--dataset_wrapper` | `str` | Registered dataset wrapper name (see `DATASET_WRAPPER_REGISTRY`), e.g. `SharedMemoryCacheDataset`.                                                                                                                  | `None` |
+| `--plugins` | `list[str]` | Python packages to import for plugin registration, e.g. `gridfm_app_dist_scc`.                                                                                                                                      | `[]` |
+| `--num_workers` | `int` | Override `data.workers` from YAML. Use `0` to debug worker crashes.                                                                                                                                                 | `None` |
+| `--dataset_wrapper_cache_dir` | `str` | Disk cache directory for dataset wrapper; cache is loaded from here when present and saved after first population.                                                                                                  | `None` |
+| `--profiler` | `str` | Enable Lightning profiler (`simple`, `advanced`, `pytorch`).                                                                                                                                                        | `None` |
+| `--compute_dc_ac_metrics` | `flag` | Compute ground-truth AC/DC power balance metrics on the test split.                                                                                                                                                 | `False` |
 | `--mp_context` | `str` | DataLoader multiprocessing start method (`spawn`, `fork`, `forkserver`). Defaults to PyTorch's automatic choice. On Linux, `spawn` is recommended for safety (CUDA + fork is unsafe); other choices emit a warning. | `None` |
 
 ### Examples
@@ -137,23 +137,23 @@ gridfm_app_dist finetune --config path/to/config.yaml --model_path path/to/model
 
 ### Arguments
 
-| Argument | Type | Description | Default |
-| -------- | ---- | ----------- | ------- |
-| `--config` | `str` | **Required**. Fine-tuning configuration file. | `None` |
-| `--model_path` | `str` | **Required**. Path to a pre-trained model state dict. | `None` |
-| `--exp_name` | `str` | MLflow experiment name. | `timestamp` |
-| `--run_name` | `str` | MLflow run name. | `run` |
-| `--log_dir` | `str` | MLflow logging directory. | `mlruns` |
-| `--data_path` | `str` | Root dataset directory. | `data` |
-| `--compile [MODE]` | `str` | Enable `torch.compile` mode. Valid values: `default`, `reduce-overhead`, `max-autotune`, `max-autotune-no-cudagraphs`. If flag is passed without a value, mode is `default`. | `None` |
-| `--bfloat16` | `flag` | Cast model to `torch.bfloat16` (`model.to(torch.bfloat16)`). | `False` |
-| `--tf32` | `flag` | Enable TF32 on Ampere+ GPUs via `torch.set_float32_matmul_precision("high")`. | `False` |
-| `--dataset_wrapper` | `str` | Registered dataset wrapper name (see `DATASET_WRAPPER_REGISTRY`), e.g. `SharedMemoryCacheDataset`. | `None` |
-| `--plugins` | `list[str]` | Python packages to import for plugin registration, e.g. `gridfm_graphkit_ee`. | `[]` |
-| `--num_workers` | `int` | Override `data.workers` from YAML. Use `0` to debug worker crashes. | `None` |
-| `--dataset_wrapper_cache_dir` | `str` | Disk cache directory for dataset wrapper; cache is loaded from here when present and saved after first population. | `None` |
-| `--profiler` | `str` | Enable Lightning profiler (`simple`, `advanced`, `pytorch`). | `None` |
-| `--compute_dc_ac_metrics` | `flag` | Compute ground-truth AC/DC power balance metrics on the test split. | `False` |
+| Argument | Type | Description                                                                                                                                                                                                         | Default |
+| -------- | ---- |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------| ------- |
+| `--config` | `str` | **Required**. Fine-tuning configuration file.                                                                                                                                                                       | `None` |
+| `--model_path` | `str` | **Required**. Path to a pre-trained model state dict.                                                                                                                                                               | `None` |
+| `--exp_name` | `str` | MLflow experiment name.                                                                                                                                                                                             | `timestamp` |
+| `--run_name` | `str` | MLflow run name.                                                                                                                                                                                                    | `run` |
+| `--log_dir` | `str` | MLflow logging directory.                                                                                                                                                                                           | `mlruns` |
+| `--data_path` | `str` | Root dataset directory.                                                                                                                                                                                             | `data` |
+| `--compile [MODE]` | `str` | Enable `torch.compile` mode. Valid values: `default`, `reduce-overhead`, `max-autotune`, `max-autotune-no-cudagraphs`. If flag is passed without a value, mode is `default`.                                        | `None` |
+| `--bfloat16` | `flag` | Cast model to `torch.bfloat16` (`model.to(torch.bfloat16)`).                                                                                                                                                        | `False` |
+| `--tf32` | `flag` | Enable TF32 on Ampere+ GPUs via `torch.set_float32_matmul_precision("high")`.                                                                                                                                       | `False` |
+| `--dataset_wrapper` | `str` | Registered dataset wrapper name (see `DATASET_WRAPPER_REGISTRY`), e.g. `SharedMemoryCacheDataset`.                                                                                                                  | `None` |
+| `--plugins` | `list[str]` | Python packages to import for plugin registration, e.g. `gridfm_app_dist_scc`.                                                                                                                                      | `[]` |
+| `--num_workers` | `int` | Override `data.workers` from YAML. Use `0` to debug worker crashes.                                                                                                                                                 | `None` |
+| `--dataset_wrapper_cache_dir` | `str` | Disk cache directory for dataset wrapper; cache is loaded from here when present and saved after first population.                                                                                                  | `None` |
+| `--profiler` | `str` | Enable Lightning profiler (`simple`, `advanced`, `pytorch`).                                                                                                                                                        | `None` |
+| `--compute_dc_ac_metrics` | `flag` | Compute ground-truth AC/DC power balance metrics on the test split.                                                                                                                                                 | `False` |
 | `--mp_context` | `str` | DataLoader multiprocessing start method (`spawn`, `fork`, `forkserver`). Defaults to PyTorch's automatic choice. On Linux, `spawn` is recommended for safety (CUDA + fork is unsafe); other choices emit a warning. | `None` |
 
 
@@ -180,7 +180,7 @@ gridfm_app_dist evaluate --config path/to/eval.yaml --model_path path/to/model.p
 | `--bfloat16` | `flag` | Cast model to `torch.bfloat16` (`model.to(torch.bfloat16)`). | `False` |
 | `--tf32` | `flag` | Enable TF32 on Ampere+ GPUs via `torch.set_float32_matmul_precision("high")`. | `False` |
 | `--dataset_wrapper` | `str` | Registered dataset wrapper name (see `DATASET_WRAPPER_REGISTRY`), e.g. `SharedMemoryCacheDataset`. | `None` |
-| `--plugins` | `list[str]` | Python packages to import for plugin registration, e.g. `gridfm_graphkit_ee`. | `[]` |
+| `--plugins` | `list[str]` | Python packages to import for plugin registration, e.g. `gridfm_app_dist_scc`. | `[]` |
 | `--num_workers` | `int` | Override `data.workers` from YAML. Use `0` to debug worker crashes. | `None` |
 | `--dataset_wrapper_cache_dir` | `str` | Disk cache directory for dataset wrapper; cache is loaded from here when present and saved after first population. | `None` |
 | `--profiler` | `str` | Enable Lightning profiler (`simple`, `advanced`, `pytorch`). | `None` |
@@ -222,7 +222,7 @@ gridfm_app_dist predict --config path/to/config.yaml --model_path path/to/model.
 | `--log_dir` | `str` | MLflow logging directory. | `mlruns` |
 | `--data_path` | `str` | Dataset directory. | `data` |
 | `--dataset_wrapper` | `str` | Registered dataset wrapper name (see `DATASET_WRAPPER_REGISTRY`), e.g. `SharedMemoryCacheDataset`. | `None` |
-| `--plugins` | `list[str]` | Python packages to import for plugin registration, e.g. `gridfm_graphkit_ee`. | `[]` |
+| `--plugins` | `list[str]` | Python packages to import for plugin registration, e.g. `gridfm_app_dist_scc`. | `[]` |
 | `--num_workers` | `int` | Override `data.workers` from YAML. Use `0` to debug worker crashes. | `None` |
 | `--dataset_wrapper_cache_dir` | `str` | Disk cache directory for dataset wrapper; cache is loaded from here when present and saved after first population. | `None` |
 | `--output_path` | `str` | Directory where predictions are saved as `<grid_name>_predictions.parquet`. | `data` |
@@ -295,7 +295,7 @@ bsub -gpu "num=1" \
      -Is \
      -J gridfm_base_set_tests \
      /bin/bash -c "
-       cd /path/to/gridfm-graphkit && \
+       cd /path/to/gridfm-app-distribution && \
        export PATH=/path/to/cuda/bin:\$PATH \
                CUDA_HOME=/path/to/cuda \
                LD_LIBRARY_PATH=/path/to/cuda/lib64:\$LD_LIBRARY_PATH && \
