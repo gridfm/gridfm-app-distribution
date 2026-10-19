@@ -183,34 +183,20 @@ class VoltageLossDetectionTask(ReconstructionTask):
 
     def _run_evaluation(self, df, out_dir):
         """
-        Metrics + figures for the predictions in ``df`` (see
-        ``io.vld_evaluation``). The model operating point is the threshold the
-        task used; the cost-optimal comparison threshold is chosen on a
-        scenario-wise hold-out of the same predictions (or on the parquet named
-        by ``evaluation.calibration_predictions`` if configured). Settings come
-        from an optional ``evaluation:`` block in the config; all have defaults.
+        Metrics + figures for the model's predictions in ``df`` at the
+        threshold the task used (see ``io.vld_evaluation``). Metric names
+        mirror the ones VLDTopologyLoss logs. Settings come from an optional
+        ``evaluation:`` block in the config (enabled, n_boot, seed); all have
+        defaults.
         """
         ev = getattr(self.args, "evaluation", None)
         if ev is not None and not getattr(ev, "enabled", True):
             return None
         kwargs = {}
         if ev is not None:
-            for name in (
-                "cost_weights",
-                "primary_cost_weights",
-                "calib_frac",
-                "n_boot",
-                "seed",
-            ):
+            for name in ("n_boot", "seed"):
                 if getattr(ev, name, None) is not None:
                     kwargs[name] = getattr(ev, name)
-            calib_path = getattr(ev, "calibration_predictions", None)
-            if calib_path:
-                kwargs["calib_df"] = (
-                    pd.read_csv(calib_path)
-                    if str(calib_path).lower().endswith(".csv")
-                    else pd.read_parquet(calib_path)
-                )
         try:
             metrics = evaluate_vld_predictions(
                 df,
