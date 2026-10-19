@@ -21,7 +21,7 @@ model:
   output_bus_dim: 5
   output_gen_dim: 1
   num_layers: 24
-  
+
   # --- ptional model features ---
   head_mode: split        # stream width = hidden_size, not hidden_size * heads
   norm_position: pre
@@ -56,7 +56,7 @@ training:
       reachability_sources: ref      # ref_and_gen only if some OV buses are connecte to grid-forming DG
       input_state_threshold: 0.5     # tau for the 0/1 status and contingency flags
       topology_confidence_gamma: 0.0 # gamma of topology confidence
-      
+
   accelerator: auto
   devices: auto
   strategy: auto
@@ -74,7 +74,7 @@ callbacks:
 
 task:
   task_name: VoltageLossDetection
-  
+
 evaluation:                        # VLD metrics + figures of the model's predictions (after test / predict)
   enabled: true                    # --no-evaluate on the command line also switches it off
   n_boot: 1000                     # cluster-bootstrap draws (over scenarios) for 95 % intervals

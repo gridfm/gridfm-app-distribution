@@ -36,7 +36,10 @@ DEFAULT_N_SCENARIO_PER_PARTITION = 200
 
 
 def n_scenario_per_partition() -> int:
-    return int(os.environ.get("N_SCENARIO_PER_PARTITION", DEFAULT_N_SCENARIO_PER_PARTITION))
+    return int(
+        os.environ.get("N_SCENARIO_PER_PARTITION", DEFAULT_N_SCENARIO_PER_PARTITION),
+    )
+
 
 BUS_DIR = "bus_data.parquet"
 GEN_DIR = "gen_data.parquet"

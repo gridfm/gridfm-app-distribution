@@ -14,8 +14,7 @@ distribution network:
 5. run `gridfm_app_dist predict` with the pre-trained checkpoint in `pretrained/`
    and read the automatic evaluation report.
 
-Open the notebook in Colab (Runtime → T4 GPU), run top to bottom. It installs
-the application from GitHub, so it always runs against the pushed code.
+Open the notebook in Colab (Runtime → T4 GPU), run top to bottom. It installs the application from GitHub, so it always runs against the pushed code.
 
 | file | purpose |
 |---|---|
@@ -25,7 +24,7 @@ the application from GitHub, so it always runs against the pushed code.
 | `configs/tutorial_train.yaml` | small VLD-only training config |
 | `pretrained/` | trained checkpoint used in step 5 (see its README) |
 
-Run it from a terminal instead:
+Run the tutorial from a terminal instead:
 
 ```bash
 contingency_data_gen --config examples/tutorial_vld/configs/tutorial_datagen.yaml

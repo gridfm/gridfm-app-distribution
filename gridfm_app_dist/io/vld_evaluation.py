@@ -80,9 +80,9 @@ _RC = {
     "savefig.dpi": 300,
     "pdf.fonttype": 42,
 }
-C_ON = "#d9731a"      # energised
-C_OFF = "#1f5fa8"     # de-energised
-C_MODEL = "#1a1a1a"   # the model's operating point
+C_ON = "#d9731a"  # energised
+C_OFF = "#1f5fa8"  # de-energised
+C_MODEL = "#1a1a1a"  # the model's operating point
 C_MUTED = "#9a9a9a"
 
 
@@ -96,6 +96,7 @@ def _plt():
     ):
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+
     return plt
 
 
@@ -113,7 +114,11 @@ def _confusion(y: np.ndarray, pred: np.ndarray) -> Tuple[int, int, int, int]:
     return tn, fp, fn, tp
 
 
-def prediction_metrics(y: np.ndarray, pred: np.ndarray, prob: np.ndarray) -> Dict[str, float]:
+def prediction_metrics(
+    y: np.ndarray,
+    pred: np.ndarray,
+    prob: np.ndarray,
+) -> Dict[str, float]:
     """
     Metrics of the hard predictions ``pred`` plus the calibration of ``prob``.
     Definitions match VLDTopologyLoss (off = label 0 = de-energised).
@@ -123,8 +128,8 @@ def prediction_metrics(y: np.ndarray, pred: np.ndarray, prob: np.ndarray) -> Dic
     tn, fp, fn, tp = _confusion(y, pred)
     n_on, n_off = tp + fn, tn + fp
     nan = float("nan")
-    on_recall = tp / n_on if n_on else nan            # 1 - false de-energisation rate
-    off_recall = tn / n_off if n_off else nan         # outage detection rate
+    on_recall = tp / n_on if n_on else nan  # 1 - false de-energisation rate
+    off_recall = tn / n_off if n_off else nan  # outage detection rate
     on_precision = tp / (tp + fp) if (tp + fp) else nan
     off_precision = tn / (tn + fn) if (tn + fn) else nan
     off_f1 = (
@@ -149,8 +154,8 @@ def prediction_metrics(y: np.ndarray, pred: np.ndarray, prob: np.ndarray) -> Dic
         "off_rate": float(1.0 - y.mean()),
         "TP_on": tp,
         "TN_off": tn,
-        "FP_pred_on_true_off": fp,   # missed outages
-        "FN_pred_off_true_on": fn,   # false alarms
+        "FP_pred_on_true_off": fp,  # missed outages
+        "FN_pred_off_true_on": fn,  # false alarms
     }
 
 
@@ -167,7 +172,11 @@ def threshold_free_metrics(y: np.ndarray, prob: np.ndarray) -> Dict[str, float]:
     return out
 
 
-def expected_calibration_error(y: np.ndarray, prob: np.ndarray, n_bins: int = 10) -> float:
+def expected_calibration_error(
+    y: np.ndarray,
+    prob: np.ndarray,
+    n_bins: int = 10,
+) -> float:
     """ECE with quantile bins (robust to the bimodal probabilities of a confident model)."""
     edges = np.unique(np.quantile(prob, np.linspace(0, 1, n_bins + 1)))
     if len(edges) < 2:
@@ -181,7 +190,10 @@ def expected_calibration_error(y: np.ndarray, prob: np.ndarray, n_bins: int = 10
     return float(ece)
 
 
-def scenario_metrics(df: pd.DataFrame, pred: np.ndarray) -> Tuple[Dict[str, float], pd.DataFrame]:
+def scenario_metrics(
+    df: pd.DataFrame,
+    pred: np.ndarray,
+) -> Tuple[Dict[str, float], pd.DataFrame]:
     """Scenario-level error counts (an operator consumes a scenario, not a bus)."""
     y = df["status_true"].to_numpy().astype(int)
     p = pred.astype(int)
@@ -233,7 +245,7 @@ def cluster_bootstrap(
     pred_all = pred.astype(int)
     order = np.argsort(inv, kind="stable")
     bounds = np.searchsorted(inv[order], np.arange(len(uniq) + 1))
-    groups = [order[bounds[i]: bounds[i + 1]] for i in range(len(uniq))]
+    groups = [order[bounds[i] : bounds[i + 1]] for i in range(len(uniq))]
     samples = {k: [] for k in keys}
     for _ in range(n_boot):
         pick = rng.integers(0, len(groups), len(groups))
@@ -258,7 +270,9 @@ def cluster_bootstrap(
 def plot_confusion(y, pred, threshold, path):
     plt = _plt()
     tn, fp, fn, tp = _confusion(y, pred)
-    cm = np.array([[tn, fp], [fn, tp]])  # rows: true off, true on; cols: pred off, pred on
+    cm = np.array(
+        [[tn, fp], [fn, tp]],
+    )  # rows: true off, true on; cols: pred off, pred on
     cmn = cm / np.clip(cm.sum(axis=1, keepdims=True), 1, None)
     with plt.rc_context(_RC):
         fig, ax = plt.subplots(figsize=(3.4, 3.0))
@@ -266,8 +280,13 @@ def plot_confusion(y, pred, threshold, path):
         for i in range(2):
             for j in range(2):
                 ax.text(
-                    j, i, f"{cm[i, j]:,}\n{cmn[i, j]:.1%}", ha="center", va="center",
-                    fontsize=7.5, color="white" if cmn[i, j] > 0.55 else "black",
+                    j,
+                    i,
+                    f"{cm[i, j]:,}\n{cmn[i, j]:.1%}",
+                    ha="center",
+                    va="center",
+                    fontsize=7.5,
+                    color="white" if cmn[i, j] > 0.55 else "black",
                 )
         ax.set_xticks([0, 1], ["de-energised", "energised"])
         ax.set_yticks([0, 1], ["de-energised", "energised"])
@@ -291,23 +310,59 @@ def plot_roc_pr(y, prob, pred, path):
     plt = _plt()
     y_off, p_off = 1 - y, 1.0 - prob
     tn, fp, fn, tp = _confusion(y, pred)
-    tpr_o = tn / max(tn + fp, 1)   # outage detection rate
-    fpr_o = fn / max(fn + tp, 1)   # energised buses called off
+    tpr_o = tn / max(tn + fp, 1)  # outage detection rate
+    fpr_o = fn / max(fn + tp, 1)  # energised buses called off
     prec_o = tn / max(tn + fn, 1)
     with plt.rc_context(_RC):
         fig, (a1, a2) = plt.subplots(1, 2, figsize=(6.4, 3.0))
         fpr, tpr, _ = roc_curve(y_off, p_off)
-        a1.plot(fpr, tpr, color=C_OFF, lw=1.6, label=f"AUC = {roc_auc_score(y_off, p_off):.3f}")
+        a1.plot(
+            fpr,
+            tpr,
+            color=C_OFF,
+            lw=1.6,
+            label=f"AUC = {roc_auc_score(y_off, p_off):.3f}",
+        )
         a1.plot([0, 1], [0, 1], "--", color=C_MUTED, lw=0.8)
-        a1.plot(fpr_o, tpr_o, "o", color=C_MODEL, ms=5.5, mec="white", mew=0.7, label="model operating point")
+        a1.plot(
+            fpr_o,
+            tpr_o,
+            "o",
+            color=C_MODEL,
+            ms=5.5,
+            mec="white",
+            mew=0.7,
+            label="model operating point",
+        )
         a1.set_xlabel("false positive rate (energised called off)")
         a1.set_ylabel("true positive rate (outage detected)")
         a1.set_title("ROC, de-energised as positive")
         a1.legend(loc="lower right")
         prec, rec, _ = precision_recall_curve(y_off, p_off)
-        a2.plot(rec, prec, color=C_OFF, lw=1.6, label=f"AP = {average_precision_score(y_off, p_off):.3f}")
-        a2.axhline(y_off.mean(), ls="--", color=C_MUTED, lw=0.8, label=f"prevalence {y_off.mean():.2f}")
-        a2.plot(tpr_o, prec_o, "o", color=C_MODEL, ms=5.5, mec="white", mew=0.7, label="model operating point")
+        a2.plot(
+            rec,
+            prec,
+            color=C_OFF,
+            lw=1.6,
+            label=f"AP = {average_precision_score(y_off, p_off):.3f}",
+        )
+        a2.axhline(
+            y_off.mean(),
+            ls="--",
+            color=C_MUTED,
+            lw=0.8,
+            label=f"prevalence {y_off.mean():.2f}",
+        )
+        a2.plot(
+            tpr_o,
+            prec_o,
+            "o",
+            color=C_MODEL,
+            ms=5.5,
+            mec="white",
+            mew=0.7,
+            label="model operating point",
+        )
         a2.set_xlabel("recall (outage detected)")
         a2.set_ylabel("precision")
         a2.set_title("Precision-recall, de-energised as positive")
@@ -322,9 +377,21 @@ def plot_probability_separation(y, prob, threshold, path):
     bins = np.linspace(0, 1, 41)
     with plt.rc_context(_RC):
         fig, ax = plt.subplots(figsize=(4.4, 2.8))
-        ax.hist(prob[y == 0], bins=bins, color=C_OFF, alpha=0.75, label="true de-energised")
+        ax.hist(
+            prob[y == 0],
+            bins=bins,
+            color=C_OFF,
+            alpha=0.75,
+            label="true de-energised",
+        )
         ax.hist(prob[y == 1], bins=bins, color=C_ON, alpha=0.75, label="true energised")
-        ax.axvline(threshold, color=C_MODEL, ls="--", lw=1.0, label=rf"$\theta$ = {threshold:.3f}")
+        ax.axvline(
+            threshold,
+            color=C_MODEL,
+            ls="--",
+            lw=1.0,
+            label=rf"$\theta$ = {threshold:.3f}",
+        )
         ax.set_yscale("log")
         ax.set_xlabel("P(energised)")
         ax.set_ylabel("buses (log)")
@@ -428,16 +495,50 @@ def plot_voltage_status(df: pd.DataFrame, threshold: float, path) -> Dict[str, f
     keep = rng.choice(len(y), size=min(len(y), 20000), replace=False)
     with plt.rc_context(_RC):
         fig, ax = plt.subplots(figsize=(3.8, 3.2))
-        for cls, col, lab in ((0, C_OFF, "true de-energised"), (1, C_ON, "true energised")):
+        for cls, col, lab in (
+            (0, C_OFF, "true de-energised"),
+            (1, C_ON, "true energised"),
+        ):
             m = keep[y[keep] == cls]
-            ax.scatter(prob[m], vm[m], s=3, alpha=0.35, color=col, label=lab, linewidths=0)
-        ax.axvline(threshold, color=C_MODEL, ls="--", lw=0.9, label=rf"$\theta$ = {threshold:.3f}")
+            ax.scatter(
+                prob[m],
+                vm[m],
+                s=3,
+                alpha=0.35,
+                color=col,
+                label=lab,
+                linewidths=0,
+            )
+        ax.axvline(
+            threshold,
+            color=C_MODEL,
+            ls="--",
+            lw=0.9,
+            label=rf"$\theta$ = {threshold:.3f}",
+        )
         ax.axhline(0.5, color=C_MUTED, ls=":", lw=0.8)
         ax.set_xlabel("P(energised)")
         ax.set_ylabel(r"predicted $\hat V$ (p.u.)")
         ax.set_title("Voltage-status consistency")
-        ax.text(0.02, 0.96, "status off\nvoltage on", transform=ax.transAxes, fontsize=6, va="top", color=C_MUTED)
-        ax.text(0.98, 0.04, "status on\nvoltage off", transform=ax.transAxes, fontsize=6, va="bottom", ha="right", color=C_MUTED)
+        ax.text(
+            0.02,
+            0.96,
+            "status off\nvoltage on",
+            transform=ax.transAxes,
+            fontsize=6,
+            va="top",
+            color=C_MUTED,
+        )
+        ax.text(
+            0.98,
+            0.04,
+            "status on\nvoltage off",
+            transform=ax.transAxes,
+            fontsize=6,
+            va="bottom",
+            ha="right",
+            color=C_MUTED,
+        )
         ax.legend(loc="center right", markerscale=3)
         fig.savefig(path)
         plt.close(fig)
@@ -518,17 +619,26 @@ def evaluate_vld_predictions(
         metrics.update(plot_voltage_status(df, model_threshold, f("voltage_status")))
         vm_p = df["vm_pred"].to_numpy().astype(float)
         off = y == 0
-        metrics["vm_mae_true_off"] = float(np.mean(np.abs(vm_p[off]))) if off.any() else float("nan")
+        metrics["vm_mae_true_off"] = (
+            float(np.mean(np.abs(vm_p[off]))) if off.any() else float("nan")
+        )
         if "vm_true" in df:
             vm_t = df["vm_true"].to_numpy().astype(float)
             metrics["vm_rmse_true_on"] = (
-                float(np.sqrt(np.mean((vm_p[~off] - vm_t[~off]) ** 2))) if (~off).any() else float("nan")
+                float(np.sqrt(np.mean((vm_p[~off] - vm_t[~off]) ** 2)))
+                if (~off).any()
+                else float("nan")
             )
 
     metrics = {
-        k: (float(v) if isinstance(v, (np.floating, np.integer)) else v) for k, v in metrics.items()
+        k: (float(v) if isinstance(v, (np.floating, np.integer)) else v)
+        for k, v in metrics.items()
     }
-    with open(os.path.join(out_dir, f"{prefix}metrics.json"), "w", encoding="utf-8") as fh:
+    with open(
+        os.path.join(out_dir, f"{prefix}metrics.json"),
+        "w",
+        encoding="utf-8",
+    ) as fh:
         json.dump(metrics, fh, indent=2)
     _write_summary(metrics, os.path.join(out_dir, f"{prefix}summary.md"))
     return metrics
@@ -607,18 +717,30 @@ def main(argv=None):
     import argparse
 
     ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     ap.add_argument("predictions", help="parquet or csv written by the VLD task")
     ap.add_argument("--outdir", default="vld_eval")
-    ap.add_argument("--threshold", type=float, default=None, help="override the threshold column")
+    ap.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="override the threshold column",
+    )
     ap.add_argument("--n-boot", type=int, default=1000)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
     p = args.predictions
     df = pd.read_csv(p) if p.lower().endswith(".csv") else pd.read_parquet(p)
-    m = evaluate_vld_predictions(df, args.outdir, model_threshold=args.threshold, n_boot=args.n_boot, seed=args.seed)
+    m = evaluate_vld_predictions(
+        df,
+        args.outdir,
+        model_threshold=args.threshold,
+        n_boot=args.n_boot,
+        seed=args.seed,
+    )
     with open(os.path.join(args.outdir, "summary.md"), encoding="utf-8") as fh:
         print(fh.read())
     return m

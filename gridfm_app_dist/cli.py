@@ -443,9 +443,11 @@ def main_cli(args):
     # to the parquet); --no-evaluate or evaluation.enabled: false switches it off.
     # Other tasks: only on explicit --evaluate.
     is_vld = config_args.task.task_name == "VoltageLossDetection"
-    run_evaluation = (
-        is_vld and not getattr(args, "no_evaluate", False)
-    ) or getattr(args, "evaluate", False)
+    run_evaluation = (is_vld and not getattr(args, "no_evaluate", False)) or getattr(
+        args,
+        "evaluate",
+        False,
+    )
     save_output = (
         getattr(args, "save_output", False)
         or args.command == "predict"
