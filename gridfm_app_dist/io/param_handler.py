@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import torch
 from gridfm_app_dist.training.loss import MixedLoss
 from gridfm_app_dist.io.registries import (
@@ -11,7 +15,12 @@ from gridfm_app_dist.io.registries import (
 
 import argparse
 from torch_geometric.transforms import Compose
-from gridfm_app_dist.tasks.base_task import BaseTask
+
+if TYPE_CHECKING:  # annotation only; a runtime import here is circular
+    # (tasks -> reconstruction_tasks -> param_handler). The tasks package is
+    # imported on demand inside get_task / get_physics_decoder instead, which
+    # is also what registers the built-in tasks and physics decoders.
+    from gridfm_app_dist.tasks.base_task import BaseTask
 
 
 class NestedNamespace(argparse.Namespace):
@@ -121,6 +130,8 @@ def get_task_transforms(args) -> Compose:
 
 def get_task(args, data_normalizers) -> BaseTask:
     """Load the task module."""
+    import gridfm_app_dist.tasks  # noqa: F401  (registers the built-in tasks)
+
     task = args.task.task_name
     try:
         return TASK_REGISTRY.create(task, args, data_normalizers)
@@ -130,6 +141,8 @@ def get_task(args, data_normalizers) -> BaseTask:
 
 def get_physics_decoder(args) -> torch.nn.Module:
     """Load the physics decoder associated with the task."""
+    import gridfm_app_dist.tasks  # noqa: F401  (registers the physics decoders)
+
     task = args.task.task_name
     try:
         return PHYSICS_DECODER_REGISTRY.create(task)

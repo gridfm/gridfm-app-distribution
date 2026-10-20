@@ -55,6 +55,8 @@ from __future__ import annotations
 import json
 import os
 from typing import Dict, Optional, Sequence, Tuple
+import numpy as np
+import pandas as pd
 
 # Keep native thread pools small. Everything in this module is single-threaded
 # numpy / pandas work, but BLAS and Arrow size their pools to the core count
@@ -64,9 +66,6 @@ from typing import Dict, Optional, Sequence, Tuple
 # effect for libraries imported after this point (i.e. the standalone CLI).
 for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_var, "4")
-
-import numpy as np
-import pandas as pd
 
 
 def _limit_arrow_threads(cpu: int = 4, io: int = 2) -> None:
@@ -78,6 +77,7 @@ def _limit_arrow_threads(cpu: int = 4, io: int = 2) -> None:
         pa.set_io_thread_count(io)
     except Exception:  # pyarrow absent or an old API: nothing to cap
         pass
+
 
 # ----------------------------------------------------------------------------
 # Plot style: applied through rc_context inside each figure so importing this
@@ -755,7 +755,11 @@ def main(argv=None):
 
     _limit_arrow_threads()
     p = args.predictions
-    df = pd.read_csv(p) if p.lower().endswith(".csv") else pd.read_parquet(p, use_threads=False)
+    df = (
+        pd.read_csv(p)
+        if p.lower().endswith(".csv")
+        else pd.read_parquet(p, use_threads=False)
+    )
     m = evaluate_vld_predictions(
         df,
         args.outdir,
