@@ -56,8 +56,28 @@ import json
 import os
 from typing import Dict, Optional, Sequence, Tuple
 
+# Keep native thread pools small. Everything in this module is single-threaded
+# numpy / pandas work, but BLAS and Arrow size their pools to the core count
+# (256 on an HPC login node) and a per-user task limit (systemd TasksMax) then
+# kills the process with "std::system_error: Resource temporarily unavailable".
+# setdefault leaves explicit user settings alone; the variables only take
+# effect for libraries imported after this point (i.e. the standalone CLI).
+for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_var, "4")
+
 import numpy as np
 import pandas as pd
+
+
+def _limit_arrow_threads(cpu: int = 4, io: int = 2) -> None:
+    """Cap pyarrow's CPU and I/O pools (they ignore the OMP_* variables)."""
+    try:
+        import pyarrow as pa
+
+        pa.set_cpu_count(min(cpu, os.cpu_count() or 1))
+        pa.set_io_thread_count(io)
+    except Exception:  # pyarrow absent or an old API: nothing to cap
+        pass
 
 # ----------------------------------------------------------------------------
 # Plot style: applied through rc_context inside each figure so importing this
@@ -573,6 +593,7 @@ def evaluate_vld_predictions(
     ``threshold`` column. ``seed`` only affects the bootstrap intervals.
     """
     os.makedirs(out_dir, exist_ok=True)
+    _limit_arrow_threads()
     df = df.copy()
     df["status_true"] = df["status_true"].astype(int)
     df["status_prob"] = df["status_prob"].astype(float)
@@ -732,8 +753,9 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
+    _limit_arrow_threads()
     p = args.predictions
-    df = pd.read_csv(p) if p.lower().endswith(".csv") else pd.read_parquet(p)
+    df = pd.read_csv(p) if p.lower().endswith(".csv") else pd.read_parquet(p, use_threads=False)
     m = evaluate_vld_predictions(
         df,
         args.outdir,

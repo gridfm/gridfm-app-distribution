@@ -99,6 +99,10 @@ def get_loss_function(args):
 
 def load_model(args) -> torch.nn.Module:
     """Load the appropriate model."""
+    # Built-in models register themselves on import; make sure that has
+    # happened (the package __init__ no longer imports them eagerly).
+    import gridfm_app_dist.models  # noqa: F401
+
     model_type = args.model.type
     try:
         return MODELS_REGISTRY.create(model_type, args)
