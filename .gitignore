@@ -16,6 +16,8 @@ gridfm_graphkit.egg-info
 mlruns
 *.pt
 !tests/models/dummy_model.pt
+!examples/tutorial_vld/pretrained/best_model_state_dict.pt
+!examples/tutorial_vld/pretrained/normalizer_stats.pt
 .DS_Store
 .julia
 *logs*
