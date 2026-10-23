@@ -3,10 +3,12 @@ Helpers for the VLD Colab tutorial (examples/tutorial_vld).
 
 Deliberately thin: the tutorial drives the application through its real CLI
 (`contingency_data_gen`, `gridfm_app_dist train/predict`) and the real loss
-(`VLDTopologyLoss`). These helpers only (a) run those commands from a notebook,
-(b) locate MLflow artifacts, (c) build loss inputs for one generated contingency
-scenario (or a five-bus toy problem) so the loss and its gradients can be
-inspected number by number, and (d) draw a few figures.
+(`VLDTopologyLoss`). These helpers only
+(a) run those commands from a notebook,
+(b) locate MLflow artifacts,
+(c) build loss inputs for one generated contingency scenario so the loss and its gradients can be
+inspected number by number, and
+(d) draw a few figures.
 """
 
 from __future__ import annotations
