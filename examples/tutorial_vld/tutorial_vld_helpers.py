@@ -4,8 +4,9 @@ Helpers for the VLD Colab tutorial (examples/tutorial_vld).
 Deliberately thin: the tutorial drives the application through its real CLI
 (`contingency_data_gen`, `gridfm_app_dist train/predict`) and the real loss
 (`VLDTopologyLoss`). These helpers only (a) run those commands from a notebook,
-(b) locate MLflow artifacts, (c) build a five-bus toy problem so the loss and
-its gradients can be inspected number by number, and (d) draw a few figures.
+(b) locate MLflow artifacts, (c) build loss inputs for one generated contingency
+scenario (or a five-bus toy problem) so the loss and its gradients can be
+inspected number by number, and (d) draw a few figures.
 """
 
 from __future__ import annotations
@@ -191,6 +192,305 @@ def adapt_pretrained(
     return config_path, stats_path, pretrained_dir / "best_model_state_dict.pt"
 
 
+# Loss settings used when inspecting the loss on a single sample (scenario or toy).
+TUTORIAL_LOSS_ARGS = dict(
+    topology_weight=1.0,
+    target_anchor_weight=0.5,
+    off_vm_weight=1.0,
+    on_vm_weight=0.5,
+    unreachable_l1_weight=1.0,
+    unreachable_pos_weight="auto",
+    max_pos_weight=10.0,
+    pos_weight_momentum=0.0,
+    reachability_sources="ref",
+    input_state_threshold=0.5,
+    topology_confidence_gamma=0.0,
+)
+
+
+# ---------------------------------------------------------------------------
+# One generated contingency scenario as VLD loss inputs
+# ---------------------------------------------------------------------------
+def _scenario_frames(bus_df: pd.DataFrame, branch_df: pd.DataFrame, scenario: int):
+    b = bus_df[bus_df.scenario == scenario].sort_values("bus").reset_index(drop=True)
+    br = branch_df[branch_df.scenario == scenario].reset_index(drop=True)
+    return b, br
+
+
+def scenario_problem(
+    bus_df: pd.DataFrame,
+    branch_df: pd.DataFrame,
+    scenario: int,
+    conflict_bus: Optional[int] = None,
+    pred_vm: float = 1.0,
+    pred_logit: float = 2.0,
+):
+    """
+    Build VLDTopologyLoss inputs (same layout as ``toy_problem``) from one
+    scenario of the generated gridfm-datakit parquet (``bus_data`` /
+    ``branch_data``). Rows are buses in ascending bus-id order; ``conflict_bus``
+    is a row position and flips that bus's dataset label.
+    """
+    from gridfm_app_dist.datasets.globals import (
+        BRANCH_BASE_STATUS_E,
+        BRANCH_CONT_E,
+        BUS_BASE_STATUS_H,
+        BUS_CONT_H,
+        BUS_STATUS_TARGET,
+        PQ_H,
+        PV_H,
+        REF_H,
+        VM_H,
+    )
+
+    b, br = _scenario_frames(bus_df, branch_df, scenario)
+    n = len(b)
+    pos = {bid: i for i, bid in enumerate(b["bus"].to_numpy())}
+
+    def col(df, name, fill):
+        return torch.tensor(
+            df[name].fillna(fill).to_numpy(dtype=float),
+            dtype=torch.float,
+        )
+
+    x = torch.zeros(n, 17)
+    x[:, PQ_H] = col(b, "PQ", 0)
+    x[:, PV_H] = col(b, "PV", 0)
+    x[:, REF_H] = col(b, "REF", 0)
+    x[:, BUS_BASE_STATUS_H] = col(b, "BUS_BASE_STATUS", 1)
+    x[:, BUS_CONT_H] = col(b, "BUS_CONTINGENCY", 0)
+
+    edges = torch.tensor(
+        np.stack(
+            [br["from_bus"].map(pos).to_numpy(), br["to_bus"].map(pos).to_numpy()],
+        ),
+        dtype=torch.long,
+    )
+    ea = torch.zeros(len(br), 13)
+    ea[:, BRANCH_BASE_STATUS_E] = col(br, "BRANCH_BASE_STATUS", 1)
+    ea[:, BRANCH_CONT_E] = col(br, "BRANCH_CONTINGENCY", 0)
+
+    target = torch.zeros(n, 7)
+    target[:, VM_H] = col(b, "Vm", 0)
+    target[:, BUS_STATUS_TARGET] = col(b, "BUS_STATUS", 0)
+    if conflict_bus is not None:
+        target[conflict_bus, BUS_STATUS_TARGET] = (
+            1.0 - target[conflict_bus, BUS_STATUS_TARGET]
+        )
+
+    pred = torch.zeros(n, 5)
+    pred[:, 0] = pred_vm
+    pred[:, 4] = pred_logit
+    pred.requires_grad_(True)
+    return b, x, edges, ea, target, pred
+
+
+def scenario_reachability(bus_df, branch_df, scenario):
+    """BFS reachability and availability of one scenario (the loss's own BFS)."""
+    from gridfm_app_dist.training.loss import VLDTopologyLoss
+
+    b, x, edges, ea, _, _ = scenario_problem(bus_df, branch_df, scenario)
+    reach, avail = VLDTopologyLoss._build_graph_reachability(
+        len(b),
+        edges,
+        ea,
+        x,
+        x.device,
+        threshold=TUTORIAL_LOSS_ARGS["input_state_threshold"],
+        sources=TUTORIAL_LOSS_ARGS["reachability_sources"],
+    )
+    return reach.numpy().astype(int), avail.numpy().astype(int)
+
+
+def pick_scenario(bus_df, branch_df, max_candidates: int = 300) -> int:
+    """
+    Pick an instructive scenario: one with at least one directly hit bus AND at
+    least one healthy-but-islanded bus (favouring more islanded buses). Falls
+    back to the scenario with the most de-energised buses.
+    """
+    order = (
+        bus_df.groupby("scenario")
+        .BUS_STATUS.mean()
+        .sort_values()
+        .index[:max_candidates]
+    )
+    best, best_key = int(order[0]), (-1, -1)
+    for sid in order:
+        reach, avail = scenario_reachability(bus_df, branch_df, sid)
+        hit = int((avail == 0).sum())
+        islanded = int(((avail == 1) & (reach == 0)).sum())
+        key = (int(hit > 0 and islanded > 0), islanded)
+        if key > best_key:
+            best, best_key = int(sid), key
+    return best
+
+
+def scenario_roles(tbl: pd.DataFrame) -> Dict[str, Optional[int]]:
+    """
+    Row positions of representative buses in a ``scenario_table``:
+    ``ref`` (source), ``on`` (an energised non-source bus), ``hit`` (a bus taken
+    out by the contingency) and ``islanded`` (healthy but no path to a source).
+    """
+
+    def first(mask):
+        idx = tbl.index[mask]
+        return int(idx[0]) if len(idx) else None
+
+    is_ref = tbl["REF"] == 1
+    on = (tbl.y_reach == 1) & ~is_ref
+    return {
+        "ref": first(is_ref),
+        "on": first(on),
+        "hit": first(tbl.available == 0),
+        "islanded": first((tbl.available == 1) & (tbl.y_reach == 0)),
+    }
+
+
+def scenario_table(
+    bus_df: pd.DataFrame,
+    branch_df: pd.DataFrame,
+    scenario: int,
+    conflict_bus: Optional[int] = None,
+    **loss_overrides,
+) -> pd.DataFrame:
+    """
+    Per-bus view of one real scenario under the real VLDTopologyLoss: labels,
+    initial predictions (V_hat = 1, z = 2) and gradients. Same columns and
+    ``attrs`` as ``toy_table`` plus ``available``, ``REF`` and ``V_true``.
+    """
+    from gridfm_app_dist.datasets.globals import BUS_STATUS_TARGET, VM_H
+    from gridfm_app_dist.io.param_handler import NestedNamespace
+    from gridfm_app_dist.training.loss import VLDTopologyLoss
+
+    b, x, edges, ea, target, pred = scenario_problem(
+        bus_df,
+        branch_df,
+        scenario,
+        conflict_bus,
+    )
+    args = dict(TUTORIAL_LOSS_ARGS)
+    args.update(loss_overrides)
+    loss_fn = VLDTopologyLoss(NestedNamespace(**args), None)
+    rel = ("bus", "connects", "bus")
+    out = loss_fn(
+        {"bus": pred},
+        {"bus": target},
+        {rel: edges},
+        {rel: ea},
+        {},
+        model=SimpleNamespace(latest_x_dict={"bus": x}),
+    )
+    out["loss"].backward()
+    reach, avail = VLDTopologyLoss._build_graph_reachability(
+        len(b),
+        edges,
+        ea,
+        x,
+        x.device,
+        threshold=args["input_state_threshold"],
+        sources=args["reachability_sources"],
+    )
+    pred_d, grad = pred.detach(), pred.grad.detach()
+    df = pd.DataFrame(
+        {
+            "bus": b["bus"].to_numpy(),
+            "REF": b["REF"].fillna(0).astype(int).to_numpy(),
+            "available": avail.numpy().astype(int),
+            "y_reach": reach.numpy().astype(int),
+            "y_target": target[:, BUS_STATUS_TARGET].numpy().astype(int),
+            "V_true": target[:, VM_H].numpy().round(4),
+            "P(on)": torch.sigmoid(pred_d[:, 4]).numpy().round(3),
+            "V_hat": pred_d[:, 0].numpy(),
+            "dL/dz (status logit)": grad[:, 4].numpy().round(4),
+            "dL/dV_hat": grad[:, 0].numpy().round(4),
+        },
+    )
+    df["conflict"] = df["y_reach"] != df["y_target"]
+    terms = {k: float(v) for k, v in out.items()}
+    df.attrs.update(
+        terms=terms,
+        w_off=terms["VLD Off Class Weight"],
+        threshold=terms["VLD Decision Threshold"],
+        scenario=int(scenario),
+    )
+    return df
+
+
+def plot_reachability(bus_df, branch_df, scenario, ax=None):
+    """Draw the feeder for one scenario, coloured by BFS reachability."""
+    import matplotlib.pyplot as plt
+    import networkx as nx
+    from matplotlib.lines import Line2D
+
+    from gridfm_app_dist.datasets.globals import BRANCH_BASE_STATUS_E, BRANCH_CONT_E
+
+    b, x, edges, ea, _, _ = scenario_problem(bus_df, branch_df, scenario)
+    reach, avail = scenario_reachability(bus_df, branch_df, scenario)
+    base = (ea[:, BRANCH_BASE_STATUS_E] > 0.5).numpy()
+    hit = (ea[:, BRANCH_CONT_E] > 0.5).numpy()
+    e = edges.T.numpy()
+
+    layout_graph = nx.Graph()
+    layout_graph.add_nodes_from(range(len(b)))
+    layout_graph.add_edges_from(map(tuple, e[base]))
+    try:
+        pos = nx.kamada_kawai_layout(layout_graph)
+    except Exception:  # scipy missing or disconnected base graph
+        pos = nx.spring_layout(layout_graph, seed=0)
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(10, 5.5))
+    ref = b["REF"].fillna(0).to_numpy() > 0.5
+    colors = [
+        "#1f5fa8" if s else ("#d9731a" if r else ("#9a9a9a" if a == 0 else "white"))
+        for r, a, s in zip(reach, avail, ref)
+    ]
+    nx.draw_networkx_edges(
+        layout_graph,
+        pos,
+        edgelist=[tuple(t) for t in e[base & ~hit]],
+        ax=ax,
+        width=1.4,
+    )
+    nx.draw_networkx_edges(
+        layout_graph,
+        pos,
+        edgelist=[tuple(t) for t in e[base & hit]],
+        ax=ax,
+        style="dashed",
+        edge_color="red",
+        width=2.0,
+    )
+    nx.draw_networkx_nodes(
+        layout_graph,
+        pos,
+        ax=ax,
+        node_color=colors,
+        edgecolors="black",
+        node_size=300,
+    )
+    nx.draw_networkx_labels(
+        layout_graph,
+        pos,
+        labels={i: str(v) for i, v in enumerate(b["bus"])},
+        ax=ax,
+        font_size=7,
+    )
+    handles = [
+        Line2D([], [], marker="o", ls="", mfc=c, mec="black", ms=9, label=lab)
+        for c, lab in [
+            ("#1f5fa8", "source (REF)"),
+            ("#d9731a", "reachable -> energised"),
+            ("#9a9a9a", "hit by contingency"),
+            ("white", "healthy but islanded"),
+        ]
+    ] + [Line2D([], [], color="red", ls="--", label="outaged branch")]
+    ax.legend(handles=handles, loc="best", fontsize=8)
+    ax.set_title(f"case33bw, scenario {scenario}: BFS reachability from the source")
+    ax.axis("off")
+    return ax
+
+
 # ---------------------------------------------------------------------------
 # Five-bus toy problem for inspecting the loss and its gradients
 # ---------------------------------------------------------------------------
@@ -258,19 +558,7 @@ def loss_toy(
     from gridfm_app_dist.training.loss import VLDTopologyLoss
 
     x, edges, ea, target, pred = toy_problem(conflict_bus, pred_vm, pred_logit)
-    args = dict(
-        topology_weight=1.0,
-        target_anchor_weight=0.5,
-        off_vm_weight=1.0,
-        on_vm_weight=0.5,
-        unreachable_l1_weight=1.0,
-        unreachable_pos_weight="auto",
-        max_pos_weight=10.0,
-        pos_weight_momentum=0.0,
-        reachability_sources="ref",
-        input_state_threshold=0.5,
-        topology_confidence_gamma=0.0,
-    )
+    args = dict(TUTORIAL_LOSS_ARGS)
     args.update(loss_overrides)
     loss_fn = VLDTopologyLoss(NestedNamespace(**args), None)
     model = SimpleNamespace(latest_x_dict={"bus": x})
