@@ -21,7 +21,7 @@ description = "Grid Foundation Model for electricity distribution use cases"
 version = "0.0.1"
 readme = "README.md"
 license = "Apache-2.0"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10,<3.14"
 
 authors = [
   {name = "Mikka Kisuule", email = "mikka.kisuule@inesctec.pt"},
