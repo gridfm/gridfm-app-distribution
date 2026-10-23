@@ -3,12 +3,10 @@ Helpers for the VLD Colab tutorial (examples/tutorial_vld).
 
 Deliberately thin: the tutorial drives the application through its real CLI
 (`contingency_data_gen`, `gridfm_app_dist train/predict`) and the real loss
-(`VLDTopologyLoss`). These helpers only
-(a) run those commands from a notebook,
-(b) locate MLflow artifacts,
-(c) build loss inputs for one generated contingency scenario so the loss and its gradients can be
-inspected number by number, and
-(d) draw a few figures.
+(`VLDTopologyLoss`). These helpers only (a) run those commands from a notebook,
+(b) locate MLflow artifacts, (c) build loss inputs for one generated contingency
+scenario (or a five-bus toy problem) so the loss and its gradients can be
+inspected number by number, and (d) draw a few figures.
 """
 
 from __future__ import annotations
@@ -162,10 +160,16 @@ def adapt_pretrained(
     n_scenarios: int,
     out_dir: Path,
     accelerator: str = "auto",
+    stats_from: Optional[Path] = None,
 ):
     """
     Point a saved checkpoint's config and normaliser at the dataset generated in this notebook.
-    The normaliser stats are keyed by network NAME, so they are re-keyed; the model weights are untouched. Returns (config_path, stats_path, weights_path).
+
+    The normaliser stats are keyed by network NAME. ``stats_from`` is a
+    ``normalizer_stats.pt`` fitted on ``network`` (e.g. the latest training run's
+    ``artifacts/stats/normalizer_stats.pt``) and is used as is. Without it, the
+    checkpoint's own stats are re-keyed, which only works when they hold a single
+    network. The model weights are untouched. Returns (config_path, stats_path, weights_path).
     """
     pretrained_dir, out_dir = Path(pretrained_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -178,17 +182,16 @@ def adapt_pretrained(
     cfg["training"]["strategy"] = "auto"
     config_path = write_yaml(out_dir / "config.yaml", cfg)
 
-    stats = torch.load(
-        pretrained_dir / "normalizer_stats.pt",
-        map_location="cpu",
-        weights_only=False,
-    )
+    source = Path(stats_from) if stats_from else pretrained_dir / "normalizer_stats.pt"
+    stats = torch.load(source, map_location="cpu", weights_only=False)
     if network not in stats:
-        # if len(stats) != 1:
-         #   raise ValueError(
-          #      f"normalizer_stats.pt holds {list(stats)}; cannot pick one for {network!r}",
-           # )
-        stats = {network: next(iter(stats[0].values()))}
+        if stats_from is not None or len(stats) != 1:
+            raise ValueError(
+                f"{source} holds stats for {list(stats)}, not {network!r}. Pass "
+                "stats_from=<training run>/stats/normalizer_stats.pt fitted on this network.",
+            )
+        stats = {network: next(iter(stats.values()))}
+    stats = {network: stats[network]}
     stats_path = out_dir / "normalizer_stats.pt"
     torch.save(stats, stats_path)
     return config_path, stats_path, pretrained_dir / "best_model_state_dict.pt"
@@ -250,10 +253,7 @@ def scenario_problem(
     pos = {bid: i for i, bid in enumerate(b["bus"].to_numpy())}
 
     def col(df, name, fill):
-        return torch.tensor(
-            df[name].fillna(fill).to_numpy(dtype=float),
-            dtype=torch.float,
-        )
+        return torch.tensor(df[name].fillna(fill).to_numpy(dtype=float), dtype=torch.float)
 
     x = torch.zeros(n, 17)
     x[:, PQ_H] = col(b, "PQ", 0)
