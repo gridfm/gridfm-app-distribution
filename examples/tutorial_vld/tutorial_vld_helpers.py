@@ -5,7 +5,7 @@ Deliberately thin: the tutorial drives the application through its real CLI
 (`contingency_data_gen`, `gridfm_app_dist train/predict`) and the real loss
 (`VLDTopologyLoss`). These helpers only (a) run those commands from a notebook,
 (b) locate MLflow artifacts, (c) build loss inputs for one generated contingency
-scenario so the loss and its gradients can be
+scenario (or a five-bus toy problem) so the loss and its gradients can be
 inspected number by number, and (d) draw a few figures.
 """
 
@@ -248,10 +248,7 @@ def scenario_problem(
     pos = {bid: i for i, bid in enumerate(b["bus"].to_numpy())}
 
     def col(df, name, fill):
-        return torch.tensor(
-            df[name].fillna(fill).to_numpy(dtype=float),
-            dtype=torch.float,
-        )
+        return torch.tensor(df[name].fillna(fill).to_numpy(dtype=float), dtype=torch.float)
 
     x = torch.zeros(n, 17)
     x[:, PQ_H] = col(b, "PQ", 0)
@@ -302,25 +299,27 @@ def scenario_reachability(bus_df, branch_df, scenario):
     return reach.numpy().astype(int), avail.numpy().astype(int)
 
 
-def pick_scenario(bus_df, branch_df, max_candidates: int = 300) -> int:
+def pick_scenario(bus_df, branch_df) -> int:
     """
-    Pick an instructive scenario: one with at least one directly hit bus AND at
-    least one healthy-but-islanded bus (favouring more islanded buses). Falls
-    back to the scenario with the most de-energised buses.
+    Pick an instructive scenario: one that has all four bus roles (source,
+    energised non-source bus, directly hit bus, healthy-but-islanded bus), with
+    the energised and islanded groups as balanced as possible. On a radial
+    feeder, maximising the islanded count alone would pick an outage next to
+    the source that blacks out everything but the REF bus.
     """
-    order = (
-        bus_df.groupby("scenario")
-        .BUS_STATUS.mean()
-        .sort_values()
-        .index[:max_candidates]
-    )
-    best, best_key = int(order[0]), (-1, -1)
-    for sid in order:
-        reach, avail = scenario_reachability(bus_df, branch_df, sid)
+    best, best_key = None, None
+    branch_groups = dict(tuple(branch_df.groupby("scenario")))
+    for sid, b in bus_df.groupby("scenario"):
+        br = branch_groups.get(sid, branch_df.iloc[:0])
+        reach, avail = scenario_reachability(b, br, sid)
+        b = b.sort_values("bus")
+        is_ref = b["REF"].fillna(0).to_numpy() > 0.5
+        n_on = int(((reach == 1) & ~is_ref).sum())
         hit = int((avail == 0).sum())
         islanded = int(((avail == 1) & (reach == 0)).sum())
-        key = (int(hit > 0 and islanded > 0), islanded)
-        if key > best_key:
+        has_all = int(n_on > 0 and hit > 0 and islanded > 0)
+        key = (has_all, min(n_on, islanded), islanded, -int(sid))
+        if best_key is None or key > best_key:
             best, best_key = int(sid), key
     return best
 
