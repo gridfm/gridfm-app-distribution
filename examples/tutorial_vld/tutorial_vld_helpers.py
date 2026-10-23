@@ -248,7 +248,10 @@ def scenario_problem(
     pos = {bid: i for i, bid in enumerate(b["bus"].to_numpy())}
 
     def col(df, name, fill):
-        return torch.tensor(df[name].fillna(fill).to_numpy(dtype=float), dtype=torch.float)
+        return torch.tensor(
+            df[name].fillna(fill).to_numpy(dtype=float),
+            dtype=torch.float,
+        )
 
     x = torch.zeros(n, 17)
     x[:, PQ_H] = col(b, "PQ", 0)
