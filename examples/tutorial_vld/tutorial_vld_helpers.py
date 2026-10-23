@@ -184,11 +184,11 @@ def adapt_pretrained(
         weights_only=False,
     )
     if network not in stats:
-        if len(stats) != 1:
-            raise ValueError(
-                f"normalizer_stats.pt holds {list(stats)}; cannot pick one for {network!r}",
-            )
-        stats = {network: next(iter(stats.values()))}
+        # if len(stats) != 1:
+         #   raise ValueError(
+          #      f"normalizer_stats.pt holds {list(stats)}; cannot pick one for {network!r}",
+           # )
+        stats = {network: next(iter(stats[0].values()))}
     stats_path = out_dir / "normalizer_stats.pt"
     torch.save(stats, stats_path)
     return config_path, stats_path, pretrained_dir / "best_model_state_dict.pt"
