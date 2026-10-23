@@ -1,0 +1,1252 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://gridfm.github.io/gridfm-app-distribution/applications/vld_integration/">
+      
+      
+        <link rel="prev" href="../VLD_loss_parameters/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../figs/KIT.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>VLD integration - gridfm-app-distribution</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="https://unpkg.com/katex@0/dist/katex.min.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#integrating-the-voltage-loss-detection-vld-task-into-gridfm-graphkit" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="gridfm-app-distribution" class="md-header__button md-logo" aria-label="gridfm-app-distribution" data-md-component="logo">
+      
+  <img src="../../figs/KIT.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            gridfm-app-distribution
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              VLD integration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/gridfm/gridfm-app-distribution" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="gridfm-app-distribution" class="md-nav__button md-logo" aria-label="gridfm-app-distribution" data-md-component="logo">
+      
+  <img src="../../figs/KIT.png" alt="logo">
+
+    </a>
+    gridfm-app-distribution
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/gridfm/gridfm-app-distribution" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quick_start/quick_start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quick_start/yaml_config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    YAML configuration file
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Applications
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Applications
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contingency_data_gen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contingency data generation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vld_tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VLD Colab tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../VLD%20topology%20task/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VLD topology task
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../VLD_loss_parameters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VLD loss parameters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VLD integration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VLD integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#task-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-new-feature-columns-datasetsglobalspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. New feature columns (datasets/globals.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-new-transforms-datasetstransformspy-datasetstask_transformspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. New transforms (datasets/transforms.py, datasets/task_transforms.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-new-masking-datasetsmaskingpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. New masking (datasets/masking.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-new-loss-traininglosspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. New loss (training/loss.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-new-physics-decoder-tasksutilspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. New physics decoder (tasks/utils.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-new-task-module-tasksvld_taskpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. New task module (tasks/vld_task.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-model-head-modelsgnn_heterogeneous_gnspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Model head (models/gnn_heterogeneous_gns.py)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Model head (models/gnn_heterogeneous_gns.py)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#loss-task-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loss ↔ task interface
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#package-layout-gridfm-app-distribution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Package layout (gridfm-app-distribution)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#task-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-new-feature-columns-datasetsglobalspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. New feature columns (datasets/globals.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-new-transforms-datasetstransformspy-datasetstask_transformspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. New transforms (datasets/transforms.py, datasets/task_transforms.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-new-masking-datasetsmaskingpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. New masking (datasets/masking.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-new-loss-traininglosspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. New loss (training/loss.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-new-physics-decoder-tasksutilspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. New physics decoder (tasks/utils.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-new-task-module-tasksvld_taskpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. New task module (tasks/vld_task.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-model-head-modelsgnn_heterogeneous_gnspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Model head (models/gnn_heterogeneous_gns.py)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Model head (models/gnn_heterogeneous_gns.py)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#loss-task-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loss ↔ task interface
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#package-layout-gridfm-app-distribution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Package layout (gridfm-app-distribution)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="integrating-the-voltage-loss-detection-vld-task-into-gridfm-graphkit">Integrating the Voltage-Loss-Detection (VLD) Task into gridfm-graphkit<a class="headerlink" href="#integrating-the-voltage-loss-detection-vld-task-into-gridfm-graphkit" title="Permanent link">&para;</a></h1>
+<p>This document describes the changes made to <a href="https://github.com/gridfm/gridfm-graphkit"><code>gridfm-graphkit</code></a> to
+integrate the new <strong>Voltage-Loss-Detection (VLD)</strong> task in the new
+(<code>gridfm_app_dist</code>) in the <code>gridfm-app-distribution</code> package is laid out.</p>
+<h2 id="task-summary">Task summary<a class="headerlink" href="#task-summary" title="Permanent link">&para;</a></h2>
+<p>The VLD task teaches the heterogeneous GNS to predict, per bus, whether that bus
+remains energized after a set of component failures (contingencies), and to
+predict a consistent voltage magnitude for the energized buses. This turns the
+model into a topology-aware "will this bus stay live?" predictor on top of the
+existing power-flow reconstruction backbone.</p>
+<hr />
+<h2 id="1-new-feature-columns-datasetsglobalspy">1. New feature columns (<code>datasets/globals.py</code>)<a class="headerlink" href="#1-new-feature-columns-datasetsglobalspy" title="Permanent link">&para;</a></h2>
+<p>The heterogeneous feature layout was extended. Base graphkit indices are kept;
+VLD adds four new indicators and repurposes the bus-output tail.</p>
+<p><strong>Bus input features (added):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Constant</th>
+<th>Index</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BUS_BASE_STATUS_H</code></td>
+<td>15</td>
+<td>Bus on/off status in the pre-contingency (base) topology</td>
+</tr>
+<tr>
+<td><code>BUS_CONT_H</code></td>
+<td>16</td>
+<td>Bus directly hit by a contingency (failure)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Branch / edge features (added):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Constant</th>
+<th>Index</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BRANCH_BASE_STATUS_E</code></td>
+<td>11</td>
+<td>Branch on/off status in the base topology</td>
+</tr>
+<tr>
+<td><code>BRANCH_CONT_E</code></td>
+<td>12</td>
+<td>Branch directly hit by a contingency</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Bus output layout (changed for VLD).</strong> Base tasks emit
+<code>[Vm, Va, Pg, Qg, Pd, Qd]</code> (6 cols, <code>PD_OUT=4</code>, <code>QD_OUT=5</code>). The VLD model emits
+<code>[Vm, Va, Pg, Qg, status_logit]</code> (5 cols):</p>
+<table>
+<thead>
+<tr>
+<th>Constant</th>
+<th>Index</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PHYSICAL_BUS_DIM</code></td>
+<td>4</td>
+<td>Number of physical bus outputs <code>[Vm, Va, Pg, Qg]</code></td>
+</tr>
+<tr>
+<td><code>BUS_STATUS_LOGIT_OUT</code></td>
+<td>4</td>
+<td>Column holding the predicted status logit</td>
+</tr>
+<tr>
+<td><code>BUS_STATUS_TARGET</code></td>
+<td>5</td>
+<td>Target column (energized/de-energized) in the target tensor</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Important consequence.</strong> Because column 4 now means <em>status logit</em> (not
+<code>Pd</code>), any code that width-guards on <code>size(1) &gt; PD_OUT (4)</code> would wrongly treat
+the status logit as a load-power column. This is why the normalizers and
+<code>PBELoss</code> were changed to guard on <code>BUS_STATUS_TARGET (5)</code> — see the code
+review, item 4.</p>
+</blockquote>
+<h2 id="2-new-transforms-datasetstransformspy-datasetstask_transformspy">2. New transforms (<code>datasets/transforms.py</code>, <code>datasets/task_transforms.py</code>)<a class="headerlink" href="#2-new-transforms-datasetstransformspy-datasetstask_transformspy" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>LoadGridParamsFromPathVLD</code> — loads grid parameters plus base status and
+  contingency indicators for buses and branches.</li>
+<li><code>RemoveInactiveBranchesKeepTopology</code> — drops electrically inactive branches for
+  the physics computation while preserving the connectivity graph used for the
+  reachability labels.</li>
+<li><code>VoltageLossDetectionTransforms</code> (registered under <code>TRANSFORM_REGISTRY</code> as
+  <code>"VoltageLossDetection"</code>) — the task <code>Compose</code> pipeline:
+  <code>LoadGridParamsFromPathVLD → RemoveInactiveBranchesKeepTopology → AddVLDHeteroMask</code>.</li>
+</ul>
+<h2 id="3-new-masking-datasetsmaskingpy">3. New masking (<code>datasets/masking.py</code>)<a class="headerlink" href="#3-new-masking-datasetsmaskingpy" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>AddVLDHeteroMask</code> — produces the hetero mask dictionary for the VLD task,
+  including the bus-status supervision mask.</li>
+</ul>
+<h2 id="4-new-loss-traininglosspy">4. New loss (<code>training/loss.py</code>)<a class="headerlink" href="#4-new-loss-traininglosspy" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>VLDTopologyLoss</code> (registered <code>"VLDTopologyLoss"</code>). Objective =
+  topology BCE + target-anchor BCE + off-bus Vm penalty + on-bus Vm penalty:</li>
+<li><strong>Reachability labels</strong> via <code>_build_graph_reachability</code>: iterative BFS from
+    buses that are base-on and not contingency-hit, propagating over branches
+    that are base-on and not contingency-hit — a direct encoding of the physical
+    rule above.</li>
+<li><strong>Topology BCE</strong> trains the status logit against the hard reachability
+    label, weighted by a confidence term
+    <code>exp(-γ·|bus_available − reachable|)</code> that down-weights ambiguous buses.</li>
+<li><strong>Target-anchor BCE</strong> additionally anchors the logit to the supplied
+    post-contingency status target.</li>
+<li><strong>Off-Vm loss</strong> drives predicted <code>Vm → 0</code> on unreachable (de-energized)
+    buses (L2 + weighted L1).</li>
+<li><strong>On-Vm loss</strong> matches predicted <code>Vm</code> to the target on reachable buses,
+    scaled by the (detached) predicted status probability.</li>
+<li>Configurable via <code>loss_args</code>: <code>topology_weight</code>, <code>target_anchor_weight</code>,
+    <code>off_vm_weight</code>, <code>on_vm_weight</code>, <code>unreachable_l1_weight</code>,
+    <code>topology_confidence_gamma</code>, <code>input_state_threshold</code>, <code>prediction_threshold</code>.</li>
+<li><code>PBELoss</code> (<code>"PBE"</code>) and <code>QgViolationPenaltyLoss</code> (<code>"QgViolationPenalty"</code>)
+  carried from the reference and adapted to the VLD 6-argument loss call
+  (they take <code>x_dict=None</code> and skip the shunt term when it is absent).</li>
+</ul>
+<p>The loss reads topology from <code>model.latest_x_dict["bus"]</code> (stored by the GNS in
+its forward pass) rather than receiving <code>x_dict</code> as a call argument — see the
+interface note below.</p>
+<h2 id="5-new-physics-decoder-tasksutilspy">5. New physics decoder (<code>tasks/utils.py</code>)<a class="headerlink" href="#5-new-physics-decoder-tasksutilspy" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>PhysicsDecoderVLD</code> (registered <code>"VoltageLossDetection"</code> in
+  <code>PHYSICS_DECODER_REGISTRY</code>) joins the existing <code>PhysicsDecoderOPF/PF/SE</code>.
+  <strong>All four physics decoders are now registered in <code>tasks/utils.py</code></strong> (moved out
+  of <code>models/utils.py</code> to avoid a duplicate-key crash).</li>
+</ul>
+<h2 id="6-new-task-module-tasksvld_taskpy">6. New task module (<code>tasks/vld_task.py</code>)<a class="headerlink" href="#6-new-task-module-tasksvld_taskpy" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>VoltageLossDetectionTask(ReconstructionTask)</code> (registered
+  <code>"VoltageLossDetection"</code> in <code>TASK_REGISTRY</code>). Adds VLD-specific test/predict
+  metrics: status accuracy, off/on-bus Vm behaviour, and per-bus status
+  probability outputs for downstream evaluation.</li>
+</ul>
+<h2 id="7-model-head-modelsgnn_heterogeneous_gnspy">7. Model head (<code>models/gnn_heterogeneous_gns.py</code>)<a class="headerlink" href="#7-model-head-modelsgnn_heterogeneous_gnspy" title="Permanent link">&para;</a></h2>
+<ul>
+<li>The heterogeneous GNS gains a dedicated <code>bus_status_head</code>. When
+  <code>task == "VoltageLossDetection"</code> the head's <code>status_logit</code> is concatenated to
+  the physical bus outputs, yielding the 5-column VLD bus output. The model also
+  stores <code>latest_x_dict</code> in its forward pass so the loss can recover the input
+  topology.</li>
+</ul>
+<hr />
+<h3 id="loss-task-interface">Loss ↔ task interface<a class="headerlink" href="#loss-task-interface" title="Permanent link">&para;</a></h3>
+<p>The VLD <code>shared_step</code> calls the loss <strong>without</strong> <code>x_dict</code>
+(<code>loss_fn(pred, target, edge_index, edge_attr, mask, model=self.model)</code>), unlike
+the base graphkit 7-argument interface.</p>
+<p><code>MixedLoss.forward</code> was updated to match,
+and the carried-over base losses accept <code>x_dict=None</code> so they remain callable in
+this 6-argument path.</p>
+<hr />
+<h2 id="package-layout-gridfm-app-distribution">Package layout (<code>gridfm-app-distribution</code>)<a class="headerlink" href="#package-layout-gridfm-app-distribution" title="Permanent link">&para;</a></h2>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>gridfm-app-distribution/
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── gridfm_app_dist/
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│   ├── __init__.py            # imports datasets, tasks, models to populate registries
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│   ├── __main__.py
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   ├── cli.py
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   ├── datasets/
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   │   ├── __init__.py        # registers normalizers + task transforms (incl. VLD)
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   │   ├── globals.py         # feature indices (+ VLD additions)
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│   │   ├── powergrid_hetero_dataset.py
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│   │   ├── hetero_powergrid_datamodule.py
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   │   ├── transforms.py      # incl. LoadGridParamsFromPathVLD, RemoveInactiveBranchesKeepTopology
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   │   ├── task_transforms.py # incl. VoltageLossDetectionTransforms
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   │   ├── masking.py         # incl. AddVLDHeteroMask
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   │   ├── normalizers.py     # VLD-safe inverse_output guards
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│   │   ├── utils.py
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>│   │   └── postprocessing.py
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│   ├── tasks/
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>│   │   ├── __init__.py        # registers PF/OPF/SE/VLD tasks
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>│   │   ├── base_task.py
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>│   │   ├── reconstruction_tasks.py
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>│   │   ├── pf_task.py · opf_task.py · se_task.py
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>│   │   ├── vld_task.py        # VoltageLossDetectionTask
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>│   │   ├── utils.py           # all 4 physics decoders + plotting helpers
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>│   │   └── compute_ac_dc_metrics.py  # compatibility stub (non-VLD)
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>│   ├── models/
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>│   │   ├── __init__.py
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>│   │   ├── gnn_heterogeneous_gns.py  # + bus_status_head, latest_x_dict
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>│   │   └── utils.py           # shared physics blocks (decoders moved to tasks/utils.py)
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>│   ├── io/
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>│   │   ├── __init__.py
+</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>│   │   ├── registries.py
+</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>│   │   ├── param_handler.py
+</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>│   │   └── visualization.py
+</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>│   └── training/
+</span><span id="__span-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>│       ├── __init__.py
+</span><span id="__span-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>│       ├── loss.py            # + VLDTopologyLoss, PBE, QgViolationPenalty
+</span><span id="__span-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>│       └── callbacks.py
+</span><span id="__span-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>├── docs/
+</span><span id="__span-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>│   ├── CODE_REVIEW.md
+</span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>│   └── INTEGRATION_CHANGES.md
+</span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>└── examples/config/vld_config.yaml
+</span></code></pre></div>
+<p>Every <code>gridfm_graphkit.*</code> import in the ported files was rewritten to
+<code>gridfm_app_dist.*</code>.</p>
+<h2 id="example-configuration">Example configuration<a class="headerlink" href="#example-configuration" title="Permanent link">&para;</a></h2>
+<p>See <code>examples/config/vld_config.yaml</code>. The key VLD settings are:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">task</span><span class="p">:</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">task_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VoltageLossDetection</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">model</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">GNS_heterogeneous</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">output_bus_dim</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span><span class="w">          </span><span class="c1"># [Vm, Va, Pg, Qg, status_logit]</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">training</span><span class="p">:</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">losses</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"VLDTopologyLoss"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">loss_weights</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">1.0</span><span class="p p-Indicator">]</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">loss_args</span><span class="p">:</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">topology_weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">      </span><span class="nt">target_anchor_weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.25</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">      </span><span class="nt">off_vm_weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">      </span><span class="nt">on_vm_weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">      </span><span class="nt">unreachable_l1_weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">      </span><span class="nt">topology_confidence_gamma</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">      </span><span class="nt">input_state_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">      </span><span class="nt">prediction_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.indexes", "navigation.tracking", "toc.follow", "search.suggest", "navigation.instant", "navigation.instant.progress", "content.code.copy", "content.code.select"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/katex.js"></script>
+      
+        <script src="https://unpkg.com/katex@0/dist/katex.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0/dist/contrib/auto-render.min.js"></script>
+      
+    
+  </body>
+</html>
