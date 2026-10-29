@@ -34,7 +34,6 @@ from gridfm_app_dist.datasets.globals import (
     MAX_QG_H,
     # Generator feature indices
     PG_H,
-    #####################
     # Indices of features of the VLD task
     # Bus feature indices
     REF_H,
@@ -47,7 +46,6 @@ from gridfm_app_dist.datasets.globals import (
     BRANCH_CONT_E,
     #####################
 )
-
 
 class BaseLoss(nn.Module, ABC):
     """
