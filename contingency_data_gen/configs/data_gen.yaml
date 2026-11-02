@@ -65,4 +65,3 @@ scenarios:
     max_n_level: 2
     max_size: 500
     builtin_network: "networks/matpower_two_substations.m"
-
