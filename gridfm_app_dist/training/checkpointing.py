@@ -35,7 +35,9 @@ def resolve_resume(log_dir, resume_ckpt, resume_run_id=None):
     if not resume_ckpt:
         return None
     if not os.path.isfile(resume_ckpt):
-        raise FileNotFoundError(f"--resume_from_checkpoint {resume_ckpt} does not exist")
+        raise FileNotFoundError(
+            f"--resume_from_checkpoint {resume_ckpt} does not exist",
+        )
     run_id = resume_run_id or run_id_from_checkpoint(resume_ckpt)
     if run_id is None:
         print(
@@ -78,13 +80,21 @@ def load_best_state_for_test(model, callbacks):
     Must run on every rank: rank 0 knows the path and broadcasts it, so every
     rank takes the same branch.
     """
-    best = next((cb for cb in callbacks if isinstance(cb, SaveBestModelStateDict)), None)
+    best = next(
+        (cb for cb in callbacks if isinstance(cb, SaveBestModelStateDict)),
+        None,
+    )
     info = None
     # Only rank 0 runs the callback's save / resume reconciliation, so only its
     # record is authoritative; the others take it from the broadcast.
     if best is not None and _global_rank() == 0:
         if best.best_model_path and os.path.exists(best.best_model_path):
-            info = (best.best_model_path, best.best_epoch, float(best.best_score), best.monitor)
+            info = (
+                best.best_model_path,
+                best.best_epoch,
+                float(best.best_score),
+                best.monitor,
+            )
         elif best.has_best:
             print(
                 "WARNING: a best score was recorded but its state dict file is missing; "
@@ -110,6 +120,10 @@ def load_best_state_for_test(model, callbacks):
     result = model.load_state_dict(state_dict, strict=False)
     missing = [k for k in result.missing_keys if k.startswith("model.")]
     if missing:
-        raise RuntimeError(f"Best state dict {path} does not match the model: missing {missing[:5]}")
-    print(f"Test phase: testing the best state (epoch {epoch}, {monitor} = {score:.4f}) from {path}")
+        raise RuntimeError(
+            f"Best state dict {path} does not match the model: missing {missing[:5]}",
+        )
+    print(
+        f"Test phase: testing the best state (epoch {epoch}, {monitor} = {score:.4f}) from {path}",
+    )
     return info

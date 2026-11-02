@@ -30,7 +30,8 @@ def _args(task, callbacks=None, optimizer=None):
     return NestedNamespace(
         task={"task_name": task},
         callbacks=callbacks or {"patience": 100, "tol": 0},
-        optimizer=optimizer or {"learning_rate": 1e-4, "lr_decay": 0.7, "lr_patience": 10},
+        optimizer=optimizer
+        or {"learning_rate": 1e-4, "lr_decay": 0.7, "lr_patience": 10},
     )
 
 
@@ -50,28 +51,46 @@ def test_other_tasks_keep_the_validation_loss():
 def test_monitor_overrides_and_validation():
     args = _args(
         "VoltageLossDetection",
-        callbacks={"patience": 100, "tol": 0, "monitor": "Validation loss", "monitor_mode": "min"},
+        callbacks={
+            "patience": 100,
+            "tol": 0,
+            "monitor": "Validation loss",
+            "monitor_mode": "min",
+        },
         optimizer={"lr_monitor": BA, "lr_monitor_mode": "max"},
     )
     m = validation_monitors(args)
     assert m["early_stopping"] == ("Validation loss", "min")
     assert m["lr_scheduler"] == (BA, "max")
     with pytest.raises(ValueError):
-        validation_monitors(_args("VoltageLossDetection", callbacks={"monitor_mode": "up"}))
+        validation_monitors(
+            _args("VoltageLossDetection", callbacks={"monitor_mode": "up"}),
+        )
 
 
 def test_resumed_lr_schedule_restarts_when_the_metric_changed():
     from gridfm_app_dist.tasks.base_task import BaseTask
 
     task = SimpleNamespace(args=_args("VoltageLossDetection"))
-    plateau = {"mode": "min", "best": 0.2, "mode_worse": float("inf"), "num_bad_epochs": 7,
-               "patience": 3, "factor": 0.5}
-    ckpt = {"lr_schedulers": [dict(plateau)]}  # older checkpoint: no lr_monitor recorded
+    plateau = {
+        "mode": "min",
+        "best": 0.2,
+        "mode_worse": float("inf"),
+        "num_bad_epochs": 7,
+        "patience": 3,
+        "factor": 0.5,
+    }
+    ckpt = {
+        "lr_schedulers": [dict(plateau)],
+    }  # older checkpoint: no lr_monitor recorded
     BaseTask.on_load_checkpoint(task, ckpt)
     state = ckpt["lr_schedulers"][0]
     assert (state["best"], state["num_bad_epochs"]) == (float("inf"), 0)
     assert (state["patience"], state["factor"]) == (10, 0.7)  # from the config
-    ckpt = {"lr_schedulers": [dict(plateau)], "lr_monitor": ["Validation VLD Loss", "min"]}
+    ckpt = {
+        "lr_schedulers": [dict(plateau)],
+        "lr_monitor": ["Validation VLD Loss", "min"],
+    }
     BaseTask.on_load_checkpoint(task, ckpt)
     assert ckpt["lr_schedulers"][0]["best"] == 0.2  # same metric: tracking continues
 
@@ -129,7 +148,11 @@ def test_best_file_is_written_with_its_sidecar(tmp_path):
     cb.on_validation_end(_trainer(tmp_path, 0.8, epoch=3), module)
     path = os.path.join(str(tmp_path), "model", "best_model_state_dict.pt")
     assert cb.best_model_path == os.path.abspath(path) and cb.best_epoch == 3
-    assert json.load(open(path + ".json")) == {"epoch": 3, "score": pytest.approx(0.8), "monitor": BA}
+    assert json.load(open(path + ".json")) == {
+        "epoch": 3,
+        "score": pytest.approx(0.8),
+        "monitor": BA,
+    }
     assert not os.path.exists(path + ".tmp")
 
 
@@ -162,8 +185,15 @@ def test_sidecar_wins_over_a_stale_checkpoint_record(tmp_path):
     module = nn.Linear(2, 2)
     cb.on_validation_end(_trainer(tmp_path, 0.85, epoch=6), module)
     stale = SaveBestModelStateDict(BA, mode="max")
-    stale.load_state_dict({"monitor": BA, "mode": "max", "best_score": 0.8,
-                           "best_model_path": cb.best_model_path, "best_epoch": 5})
+    stale.load_state_dict(
+        {
+            "monitor": BA,
+            "mode": "max",
+            "best_score": 0.8,
+            "best_model_path": cb.best_model_path,
+            "best_epoch": 5,
+        },
+    )
     stale.on_fit_start(_trainer(tmp_path, ckpt_path="last.ckpt"), module)
     assert (stale.best_epoch, stale.best_score) == (6, pytest.approx(0.85))
 
@@ -201,5 +231,8 @@ def test_test_phase_loads_the_best_state(tmp_path, compiled):
 def test_test_phase_falls_back_to_final_weights_without_a_best_file():
     task = _Task()
     before = task.model.weight.clone()
-    assert load_best_state_for_test(task, [SaveBestModelStateDict("Validation loss")]) is None
+    assert (
+        load_best_state_for_test(task, [SaveBestModelStateDict("Validation loss")])
+        is None
+    )
     assert torch.equal(task.model.weight, before)

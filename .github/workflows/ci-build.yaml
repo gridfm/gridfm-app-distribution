@@ -231,6 +231,7 @@ jobs:
           # PYSEC-2026-139: torch pt2 deserialization, local-only, no fix released yet
           # CVE-2025-2999, CVE-2025-3000, CVE-2025-3001: torch 2.8.0 memory corruption bugs (local execution vector)
           # CVE-2026-69247: cryptography PKCS#7 EnvelopedData Bleichenbacher oracle; not reachable, this repo never does PKCS#7/S-MIME decryption
+          # GHSA-xmj3-9gf7-h52w: setuptools <84.1.0, Windows-only path traversal in the legacy wheel->egg install path (Wheel.install_as_egg via namespace_packages.txt); creates a fixed-content __init__.py only. Not reachable: CI runs on Linux and installs go through pip, not install_as_egg. Cannot be fixed by upgrading while torch<2.13 caps setuptools<82 (see install step). Temporary ignore (added 2026-11-02); remove when the torch upper bound is raised.
           # PYSEC-2026-3624: lightning 2.6.5 RCE in _load_state via crafted checkpoint _instantiator hyperparameters (load_from_checkpoint). Only exploitable when loading UNTRUSTED checkpoints; our train/predict flows load our own. Temporary ignore (added 2026-08-17) to unblock all PRs; tracked in #103, to be replaced by the proper lightning upgrade (option 1) soon.
           ignore-vulns: |
             CVE-2026-4539
@@ -244,6 +245,7 @@ jobs:
             CVE-2026-69247
             PYSEC-2026-3624
             PYSEC-2026-3447
+            GHSA-xmj3-9gf7-h52w
 
   trivy_repo:
       name: Trivy (repo scan)

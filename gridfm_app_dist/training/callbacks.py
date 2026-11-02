@@ -83,7 +83,10 @@ def validation_monitors(args):
         getattr(optimizer_cfg, "lr_monitor", lr[0]),
         getattr(optimizer_cfg, "lr_monitor_mode", lr[1]),
     )
-    for name, (_, mode) in (("callbacks.monitor_mode", early), ("optimizer.lr_monitor_mode", lr)):
+    for name, (_, mode) in (
+        ("callbacks.monitor_mode", early),
+        ("optimizer.lr_monitor_mode", lr),
+    ):
         if mode not in ("min", "max"):
             raise ValueError(f"{name} must be 'min' or 'max', got {mode!r}.")
     return {"early_stopping": early, "lr_scheduler": lr, "best_model": best}
@@ -127,7 +130,10 @@ class SaveBestModelStateDict(Callback):
         }
 
     def load_state_dict(self, state_dict):
-        if state_dict.get("monitor") != self.monitor or state_dict.get("mode") != self.mode:
+        if (
+            state_dict.get("monitor") != self.monitor
+            or state_dict.get("mode") != self.mode
+        ):
             print(
                 "SaveBestModelStateDict: checkpoint tracked "
                 f"{state_dict.get('monitor')!r} ({state_dict.get('mode')}), this run tracks "
@@ -159,7 +165,11 @@ class SaveBestModelStateDict(Callback):
 
     def _current_path(self, trainer):
         model_dir = self._model_dir(trainer)
-        return os.path.abspath(os.path.join(model_dir, self.filename)) if model_dir else None
+        return (
+            os.path.abspath(os.path.join(model_dir, self.filename))
+            if model_dir
+            else None
+        )
 
     @staticmethod
     def _read_sidecar(path):
@@ -186,13 +196,18 @@ class SaveBestModelStateDict(Callback):
         # Restored best (from a resumed checkpoint) whose file is elsewhere.
         if self.best_model_path and current and self.best_model_path != current:
             if os.path.exists(self.best_model_path):
-                same = os.path.exists(current) and os.path.samefile(self.best_model_path, current)
+                same = os.path.exists(current) and os.path.samefile(
+                    self.best_model_path,
+                    current,
+                )
                 if not same:
                     os.makedirs(os.path.dirname(current), exist_ok=True)
                     shutil.copy2(self.best_model_path, current)
                     if os.path.exists(self.best_model_path + ".json"):
                         shutil.copy2(self.best_model_path + ".json", current + ".json")
-                    print(f"SaveBestModelStateDict: copied the previous best into this run: {current}")
+                    print(
+                        f"SaveBestModelStateDict: copied the previous best into this run: {current}",
+                    )
                 self.best_model_path = current
             elif os.path.exists(current):
                 self.best_model_path = current
@@ -210,7 +225,12 @@ class SaveBestModelStateDict(Callback):
         # changed monitor): do not let the first epoch after the resume overwrite
         # it blindly. A fresh run keeps the original behaviour.
         resuming = bool(getattr(trainer, "ckpt_path", None))
-        if resuming and current and os.path.exists(current) and self.best_model_path is None:
+        if (
+            resuming
+            and current
+            and os.path.exists(current)
+            and self.best_model_path is None
+        ):
             sidecar = self._read_sidecar(current)
             if sidecar and sidecar.get("monitor") == self.monitor:
                 self.best_score = float(sidecar["score"])
@@ -263,7 +283,11 @@ class SaveBestModelStateDict(Callback):
             self.best_epoch = int(trainer.current_epoch)
             with open(model_path + ".json.tmp", "w") as f:
                 json.dump(
-                    {"epoch": self.best_epoch, "score": self.best_score, "monitor": self.monitor},
+                    {
+                        "epoch": self.best_epoch,
+                        "score": self.best_score,
+                        "monitor": self.monitor,
+                    },
                     f,
                 )
             os.replace(model_path + ".json.tmp", model_path + ".json")
