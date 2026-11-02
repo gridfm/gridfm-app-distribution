@@ -41,7 +41,7 @@ def test_input_paths_resolve_to_package_files():
     cfg_dir = str(CONFIG_DIR)
     xlsx = resolve_input_path("./config/case33radial.xlsx", cfg_dir)
     assert os.path.isfile(xlsx) and xlsx.endswith("case33radial.xlsx")
-    yml = resolve_input_path("urban_LV.yaml", cfg_dir)
+    yml = resolve_input_path("rural_LV.yaml", cfg_dir)
     assert os.path.isfile(yml) and os.sep + "netbuilder" + os.sep in yml
     missing = resolve_input_path("networks/does_not_exist.m", cfg_dir)
     assert missing == "networks/does_not_exist.m"  # left for a precise error later
