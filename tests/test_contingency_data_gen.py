@@ -27,7 +27,7 @@ pandapower = pytest.importorskip(
 
 def test_shipped_configs_resolve_and_validate():
     names = list_shipped_configs()
-    assert "data_gen_1.yaml" in names
+    assert "data_gen.yaml" in names
     for name in names:
         path = resolve_config_path(name)
         cfg = load_config(path)

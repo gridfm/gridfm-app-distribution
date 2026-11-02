@@ -29,10 +29,10 @@ defaults:
 # Flag 10 - Network loaded from MATPOWER m file in /networks
 
 scenarios:
-  - name: case33meshed # case33meshed to N-2
-    network_file_path: networks/case33meshed.xlsx
+  - name: case33radial # case33radial to N-2
+    network_file_path: networks/case33radial.xlsx
     flag: 1
-    output_dir: data/scenario_33meshed
+    output_dir: data/scenario_33radial
     max_n_level: 2
     max_size: 500
 
