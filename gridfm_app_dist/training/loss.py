@@ -815,6 +815,7 @@ class VLDTopologyLoss(BaseLoss):
 
         return {
             "loss": total_loss,
+            "VLD Loss": total_loss.detach(),  # the VLD objective alone (LR-schedule monitor)
             "VLD Topology BCE": topology_bce.detach(),
             "VLD Target Anchor BCE": target_anchor_bce.detach(),
             "VLD Off Vm Loss": off_vm_loss.detach(),

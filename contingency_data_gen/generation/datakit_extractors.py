@@ -1042,7 +1042,15 @@ def count_unexplained_branch_outages(bus_df, branch_df, max_scenarios=2000, seed
     ).to_numpy()
     br = branch_df.loc[
         branch_df["scenario"].isin(scenarios),
-        ["scenario", "idx", "from_bus", "to_bus", "br_status", "BRANCH_BASE_STATUS", "BRANCH_CONTINGENCY"],
+        [
+            "scenario",
+            "idx",
+            "from_bus",
+            "to_bus",
+            "br_status",
+            "BRANCH_BASE_STATUS",
+            "BRANCH_CONTINGENCY",
+        ],
     ]
     br = br.merge(
         bus.rename(columns={"bus": "from_bus", "available": "from_ok"}),

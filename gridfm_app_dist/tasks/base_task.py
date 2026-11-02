@@ -94,15 +94,52 @@ class BaseTask(L.LightningModule, ABC):
             stats_dict[self.args.data.networks[i]] = normalizer.get_stats()
         torch.save(stats_dict, os.path.join(log_dir, "normalizer_stats.pt"))
 
+    def on_save_checkpoint(self, checkpoint):
+        # Record which metric the LR schedule follows, so a resume can tell
+        # whether the checkpoint's ReduceLROnPlateau state is comparable.
+        from gridfm_app_dist.training.callbacks import validation_monitors
+
+        checkpoint["lr_monitor"] = list(validation_monitors(self.args)["lr_scheduler"])
+
+    def on_load_checkpoint(self, checkpoint):
+        """
+        Align the restored ReduceLROnPlateau state with the current config.
+
+        Lightning restores the scheduler's whole state after this hook, including
+        mode, best value, patience and factor. If the checkpoint followed a
+        different metric (or none was recorded: an older checkpoint), its "best"
+        is not comparable with the new metric, so the plateau tracking restarts.
+        patience / factor always come from the config.
+        """
+        from gridfm_app_dist.training.callbacks import validation_monitors
+
+        name, mode = validation_monitors(self.args)["lr_scheduler"]
+        same_metric = checkpoint.get("lr_monitor") == [name, mode]
+        for state in checkpoint.get("lr_schedulers", []) or []:
+            if not isinstance(state, dict) or "num_bad_epochs" not in state:
+                continue  # not a ReduceLROnPlateau state
+            state["patience"] = self.args.optimizer.lr_patience
+            state["factor"] = self.args.optimizer.lr_decay
+            if not same_metric:
+                worse = float("inf") if mode == "min" else -float("inf")
+                state.update(mode=mode, mode_worse=worse, best=worse, num_bad_epochs=0)
+                print(
+                    f"LR schedule: checkpoint followed {checkpoint.get('lr_monitor')}, "
+                    f"now {[name, mode]}; plateau tracking restarted (current LR kept).",
+                )
+
     def configure_optimizers(self):
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
             lr=self.args.optimizer.learning_rate,
             betas=(self.args.optimizer.beta1, self.args.optimizer.beta2),
         )
+        from gridfm_app_dist.training.callbacks import validation_monitors
+
+        lr_monitor, lr_mode = validation_monitors(self.args)["lr_scheduler"]
         self.scheduler = ReduceLROnPlateau(
             self.optimizer,
-            mode="min",
+            mode=lr_mode,
             factor=self.args.optimizer.lr_decay,
             patience=self.args.optimizer.lr_patience,
         )
@@ -110,7 +147,7 @@ class BaseTask(L.LightningModule, ABC):
             "optimizer": self.optimizer,
             "lr_scheduler": {
                 "scheduler": self.scheduler,
-                "monitor": "Validation loss",
+                "monitor": lr_monitor,
                 "reduce_on_plateau": True,
             },
         }

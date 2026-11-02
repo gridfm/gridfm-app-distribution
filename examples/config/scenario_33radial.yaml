@@ -28,6 +28,7 @@ training:
   batch_size: 64
   epochs: 100
   reset_vld_threshold_on_finetune: true   # finetune: re-initialise w_off from the new network
+  test_on_best_checkpoint: true           # test the exported best_model_state_dict.pt, not the last epoch
   losses: ["MaskedMSE", "PBE", "VLDTopologyLoss"]
   loss_weights: [0.05, 0.15, 0.80]
 
@@ -82,10 +83,16 @@ optimizer:
   beta2: 0.999
   lr_decay: 0.7
   lr_patience: 10
+  # LR schedule monitor. VLD default: "Validation VLD Loss" (min), the VLD objective alone.
+  # lr_monitor: Validation VLD Loss
+  # lr_monitor_mode: min
 
 callbacks:
-  patience: 100
-  tol: 0
+  patience: 100                    # keep >= 100 for VLD: balanced accuracy can stay flat for ~85 epochs before it rises
+  tol: 0                           # min_delta in the monitor's units: for VLD that is balanced accuracy (e.g. 0.001), not loss
+  # Early-stopping monitor. VLD default: "Validation VLD Balanced Accuracy" (max).
+  # monitor: Validation VLD Balanced Accuracy
+  # monitor_mode: max
 
 task:
   task_name: VoltageLossDetection

@@ -217,4 +217,3 @@ def test_reset_class_weight_ema_reinitialises_from_new_data():
     loss(*_batch())  # the next training batch sets it from THIS data
     assert torch.isclose(loss.ema_off_weight, torch.tensor(2.5))
     assert loss.decision_threshold() == pytest.approx(1.0 / 3.5)
-

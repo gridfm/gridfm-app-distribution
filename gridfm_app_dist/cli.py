@@ -1,7 +1,16 @@
 from gridfm_app_dist.datasets.hetero_powergrid_datamodule import LitGridHeteroDataModule
 from gridfm_app_dist.io.param_handler import NestedNamespace
 from gridfm_app_dist.io.registries import DATASET_WRAPPER_REGISTRY
-from gridfm_app_dist.training.callbacks import SaveBestModelStateDict
+from gridfm_app_dist.training.callbacks import (
+    ConfigPatienceEarlyStopping,
+    SaveBestModelStateDict,
+    validation_monitors,
+)
+from gridfm_app_dist.training.checkpointing import (
+    load_best_state_for_test,
+    resolve_resume,
+)
+import inspect
 import importlib
 import numpy as np
 import os
@@ -12,7 +21,6 @@ import pandas as pd
 
 from gridfm_app_dist.io.param_handler import get_task
 from gridfm_app_dist.tasks.compute_ac_dc_metrics import compute_ac_dc_metrics
-from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import MLFlowLogger
 import lightning as L
@@ -206,7 +214,9 @@ def _reset_vld_class_weight(model):
         if isinstance(module, VLDTopologyLoss):
             previous = module.reset_class_weight_ema()
             if previous is None:
-                print("VLD class weight: no w_off in the checkpoint; set from this stage's data.")
+                print(
+                    "VLD class weight: no w_off in the checkpoint; set from this stage's data.",
+                )
             else:
                 print(
                     f"VLD class weight: discarded w_off={previous:.3f} "
@@ -216,24 +226,34 @@ def _reset_vld_class_weight(model):
                 )
 
 
+class _ResumedMLFlowLogger(MLFlowLogger):
+    """MLFlowLogger for a resumed run. MLflow refuses to change the value of an
+    already-logged parameter, so a config edited between the interrupted job and
+    the resume (e.g. more epochs) would otherwise crash at fit start."""
+
+    def log_hyperparams(self, params):
+        try:
+            super().log_hyperparams(params)
+        except Exception as e:  # mlflow.exceptions.MlflowException
+            print(f"MLflow: parameters of the resumed run were not re-logged ({e}).")
+
+
 def get_training_callbacks(args):
-    early_stop_callback = EarlyStopping(
-        monitor="Validation loss",
+    monitors = validation_monitors(args)
+    early_monitor, early_mode = monitors["early_stopping"]
+    early_stop_callback = ConfigPatienceEarlyStopping(
+        monitor=early_monitor,
         min_delta=args.callbacks.tol,
         patience=args.callbacks.patience,
         verbose=False,
-        mode="min",
+        mode=early_mode,
     )
 
     # For VLD the total loss is dominated by the voltage / PBE terms, so the
-    # lowest-loss epoch is not necessarily the best classifier. Select the
-    # exported state dict on balanced accuracy (mean of off- and on-recall,
-    # computed at the loss's own 1/(1+w_off) threshold) instead. Early stopping
-    # stays on the loss.
-    if getattr(args.task, "task_name", None) == "VoltageLossDetection":
-        best_monitor, best_mode = "Validation VLD Balanced Accuracy", "max"
-    else:
-        best_monitor, best_mode = "Validation loss", "min"
+    # lowest-loss epoch is not necessarily the best classifier. Early stopping
+    # and the exported state dict follow balanced accuracy (mean of off- and
+    # on-recall at the loss's own 1/(1+w_off) threshold); see validation_monitors.
+    best_monitor, best_mode = monitors["best_model"]
 
     save_best_model_callback = SaveBestModelStateDict(
         monitor=best_monitor,
@@ -315,11 +335,23 @@ def main_cli(args):
     # trainer.strategy.broadcast(dirpath), so every rank adopts rank 0's path
     # even though only rank 0 has a logger to derive it from.
     rank = _global_rank()
+    # Resuming (train / finetune --resume_from_checkpoint): continue logging into
+    # the interrupted MLflow run, taken from --resume_run_id or from the
+    # checkpoint path <log_dir>/<experiment_id>/<run_id>/checkpoints/last.ckpt.
+    resume_ckpt = getattr(args, "resume_from_checkpoint", None)
+    resume_run_id = resolve_resume(
+        args.log_dir,
+        resume_ckpt,
+        getattr(args, "resume_run_id", None),
+    )
+    logger_kwargs = {"run_id": resume_run_id} if resume_run_id else {}
+    logger_cls = _ResumedMLFlowLogger if resume_ckpt else MLFlowLogger
     logger = (
-        MLFlowLogger(
+        logger_cls(
             save_dir=args.log_dir,
             experiment_name=args.exp_name,
             run_name=args.run_name,
+            **logger_kwargs,
         )
         if rank == 0
         else False
@@ -352,7 +384,7 @@ def main_cli(args):
         dataset_wrapper_cache_dir=dataset_wrapper_cache_dir,
     )
     model = get_task(config_args, litGrid.data_normalizers)
-    if args.command != "train":
+    if args.command != "train" and not resume_ckpt:
         print(f"Loading model weights from {args.model_path}")
         state_dict = torch.load(args.model_path, map_location="cpu")
         # Non-strict so that checkpoints saved before the VLDTopologyLoss EMA
@@ -403,6 +435,7 @@ def main_cli(args):
         trainer_kwargs["precision"] = precision
     profiler = getattr(args, "profiler", None)
 
+    training_callbacks = get_training_callbacks(config_args)
     trainer = L.Trainer(
         logger=logger,
         accelerator=config_args.training.accelerator,
@@ -412,12 +445,26 @@ def main_cli(args):
         log_every_n_steps=1000,
         default_root_dir=args.log_dir,
         max_epochs=config_args.training.epochs,
-        callbacks=get_training_callbacks(config_args),
+        callbacks=training_callbacks,
         **trainer_kwargs,
         profiler=profiler,
     )
     if args.command == "train" or args.command == "finetune":
-        trainer.fit(model=model, datamodule=litGrid)
+        if resume_ckpt:
+            print(
+                f"Resuming from {resume_ckpt} (weights, optimizer, LR schedule, epoch and "
+                "callback state)"
+                + (f" into MLflow run {resume_run_id}" if logger_kwargs else ""),
+            )
+        fit_kwargs = {"ckpt_path": resume_ckpt}
+        if resume_ckpt and "weights_only" in inspect.signature(trainer.fit).parameters:
+            # Our own checkpoint: it also pickles the hyperparameters (config
+            # namespace, normalizers), which a weights-only load rejects.
+            fit_kwargs["weights_only"] = False
+        trainer.fit(model=model, datamodule=litGrid, **fit_kwargs)
+        # Test the exported best state, not whatever the last epoch left in memory.
+        if getattr(config_args.training, "test_on_best_checkpoint", True):
+            load_best_state_for_test(model, training_callbacks)
 
     # The test phase MUST run on EVERY rank. VLDTask.on_test_end calls
     # dist.gather_object(self.test_outputs, gathered, dst=0), a collective over

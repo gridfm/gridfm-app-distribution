@@ -158,6 +158,19 @@ def main():
         help="Directory for the dataset wrapper's disk cache. If set, cache is loaded from here when present and saved here after first population.",
     )
     train_parser.add_argument(
+        "--resume_from_checkpoint",
+        type=str,
+        default=None,
+        help="Resume an interrupted run from a Lightning checkpoint (e.g. <run>/checkpoints/last.ckpt): "
+        "restores weights, optimizer, LR schedule, epoch and callback state.",
+    )
+    train_parser.add_argument(
+        "--resume_run_id",
+        type=str,
+        default=None,
+        help="MLflow run to continue logging into when resuming. Default: the run the checkpoint path belongs to.",
+    )
+    train_parser.add_argument(
         "--profiler",
         type=str,
         default=None,
@@ -199,6 +212,19 @@ def main():
         type=str,
         default=None,
         help="Directory for the dataset wrapper's disk cache. If set, cache is loaded from here when present and saved here after first population.",
+    )
+    finetune_parser.add_argument(
+        "--resume_from_checkpoint",
+        type=str,
+        default=None,
+        help="Resume an interrupted run from a Lightning checkpoint (e.g. <run>/checkpoints/last.ckpt): "
+        "restores weights, optimizer, LR schedule, epoch and callback state.",
+    )
+    finetune_parser.add_argument(
+        "--resume_run_id",
+        type=str,
+        default=None,
+        help="MLflow run to continue logging into when resuming. Default: the run the checkpoint path belongs to.",
     )
     finetune_parser.add_argument(
         "--profiler",
