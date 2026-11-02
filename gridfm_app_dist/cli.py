@@ -198,6 +198,24 @@ class PhysicsGateMonitor(L.Callback):
         )
 
 
+def _reset_vld_class_weight(model):
+    """Reset the EMA class weight w_off of every VLDTopologyLoss in ``model``."""
+    from gridfm_app_dist.training.loss import VLDTopologyLoss
+
+    for module in model.modules():
+        if isinstance(module, VLDTopologyLoss):
+            previous = module.reset_class_weight_ema()
+            if previous is None:
+                print("VLD class weight: no w_off in the checkpoint; set from this stage's data.")
+            else:
+                print(
+                    f"VLD class weight: discarded w_off={previous:.3f} "
+                    f"(threshold {1.0 / (1.0 + previous):.3f}) from the checkpoint; "
+                    "re-initialised from this stage's data "
+                    "(training.reset_vld_threshold_on_finetune: false keeps it).",
+                )
+
+
 def get_training_callbacks(args):
     early_stop_callback = EarlyStopping(
         monitor="Validation loss",
@@ -354,6 +372,15 @@ def main_cli(args):
             raise RuntimeError(
                 f"Checkpoint does not match the model architecture; missing model weights: {model_keys}",
             )
+        # A new fine-tuning stage trains on a new network: do not start from the
+        # previous network's class ratio. evaluate / predict keep the trained
+        # w_off, because it defines their decision threshold.
+        if args.command == "finetune" and getattr(
+            config_args.training,
+            "reset_vld_threshold_on_finetune",
+            True,
+        ):
+            _reset_vld_class_weight(model)
 
     precision = "bf16-true" if getattr(args, "bfloat16", False) else None
     if precision:

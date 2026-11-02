@@ -201,3 +201,20 @@ def test_class_weight_and_anchor_come_from_reachability():
     b = loss(*_batch(label=label, logit=logit2))
     assert b["VLD Topology BCE"] < a["VLD Topology BCE"]
     assert b["VLD Target Anchor BCE"] > a["VLD Target Anchor BCE"]
+
+
+def test_reset_class_weight_ema_reinitialises_from_new_data():
+    args = _args(pos_weight_momentum=0.99)
+    loss = VLDTopologyLoss(args.training.loss_args[2], args)
+    loss.train()
+    loss(*_batch())  # first batch initialises the EMA: n_on / n_off = 5 / 2
+    assert bool(loss.ema_initialised)
+    assert torch.isclose(loss.ema_off_weight, torch.tensor(2.5))
+    loss.ema_off_weight.fill_(9.0)  # pretend it came from a previous network
+    assert loss.reset_class_weight_ema() == 9.0
+    assert not bool(loss.ema_initialised)
+    assert loss.decision_threshold() is None  # no stale threshold before training
+    loss(*_batch())  # the next training batch sets it from THIS data
+    assert torch.isclose(loss.ema_off_weight, torch.tensor(2.5))
+    assert loss.decision_threshold() == pytest.approx(1.0 / 3.5)
+

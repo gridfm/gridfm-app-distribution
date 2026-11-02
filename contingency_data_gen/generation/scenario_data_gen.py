@@ -1029,7 +1029,9 @@ class ScenarioGenerator:
         - the BUS_STATUS label agrees with the REF-reachability the model can
           derive from its input flags (``reachability_*`` keys; must be 0
           conflicts), on up to ``reachability_check_scenarios`` scenarios
-          (None = all).
+          (None = all),
+        - no branch has br_status = 0 without a visible reason
+          (``unexplained_off_branches``; must be 0).
         """
         bus_required_columns = set(
             ["scenario"] + dke.BUS_DATAKIT_COLUMNS + dke.BUS_VLD_COLUMNS,
@@ -1118,6 +1120,21 @@ class ScenarioGenerator:
             max_scenarios=reachability_check_scenarios,
         )
         summary.update({f"reachability_{k}": v for k, v in reach.items()})
+        br_check = dke.count_unexplained_branch_outages(
+            bus_df,
+            branch_df,
+            max_scenarios=reachability_check_scenarios,
+        )
+        summary["unexplained_off_branches"] = br_check["unexplained_off_branches"]
+        if br_check["unexplained_off_branches"]:
+            print(
+                f"WARNING: {br_check['unexplained_off_branches']} branches have "
+                "br_status = 0 without being off in the base case, a contingency, or "
+                "attached to an unavailable bus (in "
+                f"{br_check['scenarios_with_unexplained']} of {br_check['checked_scenarios']} "
+                f"checked scenarios, e.g. {br_check['examples']}). The edge set would "
+                "then encode the label.",
+            )
         if reach["conflict_buses"]:
             print(
                 f"WARNING: {reach['conflict_buses']} bus labels "

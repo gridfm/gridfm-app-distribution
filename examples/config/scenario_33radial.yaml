@@ -21,10 +21,13 @@ model:
   output_bus_dim: 5
   output_gen_dim: 1
   num_layers: 24
+  topology_gating: message_mask     # drop unavailable branches (base off or hit) from message passing;
+                                    # set it from the first stage of a sequence, not mid-sequence
 
 training:
   batch_size: 64
   epochs: 100
+  reset_vld_threshold_on_finetune: true   # finetune: re-initialise w_off from the new network
   losses: ["MaskedMSE", "PBE", "VLDTopologyLoss"]
   loss_weights: [0.05, 0.15, 0.80]
 
@@ -33,11 +36,11 @@ training:
     - {}                           # MaskedMSE tuning can be activated for fine tuning tasks
     - {}                           # PBE tuning can be activated for fine tuning tasks
     - # ---- VLDTopologyLoss -------------------------------------------------
-      # Status-logit terms, eq. (18). Both terms share the stationary point
-      # p* = y on agreeing buses; on conflict buses (BFS != label) the topology
-      # weight is zero and the anchor weight is w_off, so the label wins. The
-      # anchor is the only signal on those buses, hence it is raised from 0.25
-      # to 0.5 so they are learned at a comparable rate to agreeing buses.
+      # Status-logit terms, eq. (18). The topology term (BFS reachability) is
+      # primary on every bus; the dataset-label anchor acts only on conflict
+      # buses (BFS != label), unweighted by class, so with target_anchor_weight
+      # < 1 the decision still follows reachability. With correctly generated
+      # data there are no conflicts and the anchor is 0.
       topology_weight: 1.0           # lambda_reach
       target_anchor_weight: 0.5      # lambda_anc  (was 0.25)
 

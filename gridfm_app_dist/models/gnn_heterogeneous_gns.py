@@ -418,6 +418,14 @@ class GNS_heterogeneous(nn.Module):
         # passing AND from the branch-flow computation, which is what "the
         # branch is open" physically means. Zero new parameters.
         if self.topology_gating == "message_mask":
+            if bus_edge_attr.size(1) <= BRANCH_CONT_E:
+                raise ValueError(
+                    "model.topology_gating='message_mask' needs the VLD branch columns "
+                    f"BRANCH_BASE_STATUS_E ({BRANCH_BASE_STATUS_E}) and BRANCH_CONT_E "
+                    f"({BRANCH_CONT_E}), but the bus-bus edges have only "
+                    f"{bus_edge_attr.size(1)} feature column(s). Use topology_gating: none "
+                    "for datasets without the VLD status columns.",
+                )
             keep = self._available_branch_mask(bus_edge_attr)
             bus_edge_index = bus_edge_index[:, keep]
             bus_edge_attr = bus_edge_attr[keep]

@@ -1013,3 +1013,58 @@ def count_reachability_conflicts(bus_df, branch_df, max_scenarios=2000, seed=0):
         "conflict_reach1_label0": int(n_reach1_label0),
         "scenarios_with_conflict": int(scenarios_with_conflict),
     }
+
+
+def _sample_scenarios(bus_df, max_scenarios, seed):
+    scenarios = np.sort(bus_df["scenario"].unique())
+    if max_scenarios is not None and len(scenarios) > max_scenarios:
+        rng = np.random.default_rng(seed)
+        scenarios = np.sort(rng.choice(scenarios, size=max_scenarios, replace=False))
+    return scenarios
+
+
+def count_unexplained_branch_outages(bus_df, branch_df, max_scenarios=2000, seed=0):
+    """Branches switched off (br_status = 0) for no reason the model can see.
+
+    ``br_status`` decides which edges the model gets (the VLD transforms drop
+    br_status = 0). A branch may legitimately be off because it is off in the
+    base case (BRANCH_BASE_STATUS = 0), is a contingency (BRANCH_CONTINGENCY = 1)
+    or touches an unavailable bus (BUS_BASE_STATUS = 0 or BUS_CONTINGENCY = 1).
+    Any other br_status = 0 - e.g. a solver switching off branches inside a
+    de-energised area - would encode the label in the graph itself; this must
+    be 0.
+    """
+    scenarios = _sample_scenarios(bus_df, max_scenarios, seed)
+    bus = bus_df.loc[bus_df["scenario"].isin(scenarios), ["scenario", "bus"]].copy()
+    bus["available"] = (
+        (bus_df.loc[bus.index, "BUS_BASE_STATUS"] > 0.5)
+        & (bus_df.loc[bus.index, "BUS_CONTINGENCY"] < 0.5)
+    ).to_numpy()
+    br = branch_df.loc[
+        branch_df["scenario"].isin(scenarios),
+        ["scenario", "idx", "from_bus", "to_bus", "br_status", "BRANCH_BASE_STATUS", "BRANCH_CONTINGENCY"],
+    ]
+    br = br.merge(
+        bus.rename(columns={"bus": "from_bus", "available": "from_ok"}),
+        on=["scenario", "from_bus"],
+        how="left",
+    ).merge(
+        bus.rename(columns={"bus": "to_bus", "available": "to_ok"}),
+        on=["scenario", "to_bus"],
+        how="left",
+    )
+    unexplained = (
+        (br["br_status"] < 0.5)
+        & (br["BRANCH_BASE_STATUS"] > 0.5)
+        & (br["BRANCH_CONTINGENCY"] < 0.5)
+        & br["from_ok"].fillna(False).astype(bool)
+        & br["to_ok"].fillna(False).astype(bool)
+    )
+    bad = br.loc[unexplained, ["scenario", "idx"]]
+    return {
+        "checked_scenarios": int(len(scenarios)),
+        "checked_branches": int(len(br)),
+        "unexplained_off_branches": int(unexplained.sum()),
+        "scenarios_with_unexplained": int(bad["scenario"].nunique()),
+        "examples": bad.head(5).to_dict("records"),
+    }

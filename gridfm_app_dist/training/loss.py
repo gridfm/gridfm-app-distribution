@@ -553,6 +553,23 @@ class VLDTopologyLoss(BaseLoss):
             batch_weight if batch_weight is not None else torch.ones((), device=device)
         )
 
+    def reset_class_weight_ema(self):
+        """
+        Forget the EMA of the class weight w_off (and so the decision threshold).
+
+        Called when fine-tuning on a new network: the checkpoint carries the
+        previous network's w_off, which would otherwise set the class weight and
+        the 1 / (1 + w_off) threshold of the new stage until the EMA catches up.
+        After a reset the first training batch initialises the EMA from the new
+        network; until then the per-batch value is used.
+        Returns the w_off value that was discarded (None if it was not set).
+        """
+        previous = float(self.ema_off_weight) if bool(self.ema_initialised) else None
+        with torch.no_grad():
+            self.ema_off_weight.fill_(1.0)
+            self.ema_initialised.fill_(False)
+        return previous
+
     def decision_threshold(self):
         """
         Decision threshold theta = 1 / (1 + w_off) for the status probability,

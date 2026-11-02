@@ -44,6 +44,33 @@ def test_reachability_from_flags_counts_conflicts():
     assert res["conflict_buses"] == 1 and res["conflict_reach0_label1"] == 1
 
 
+def test_unexplained_branch_outages_are_reported():
+    bus = pd.DataFrame(
+        {
+            "scenario": 0,
+            "bus": [10, 11, 12],
+            "BUS_BASE_STATUS": 1,
+            "BUS_CONTINGENCY": [0, 0, 1],
+        },
+    )
+    branch = pd.DataFrame(
+        {
+            "scenario": 0,
+            "idx": [0, 1, 2, 3],
+            "from_bus": [10, 11, 10, 10],
+            "to_bus": [11, 12, 12, 11],
+            # 0: healthy & on; 1: off, touches the hit bus 12 (explained);
+            # 2: off, contingency (explained); 3: off for no visible reason
+            "br_status": [1, 0, 0, 0],
+            "BRANCH_BASE_STATUS": [1, 1, 1, 1],
+            "BRANCH_CONTINGENCY": [0, 0, 1, 0],
+        },
+    )
+    res = dke.count_unexplained_branch_outages(bus, branch)
+    assert res["unexplained_off_branches"] == 1
+    assert res["examples"] == [{"scenario": 0, "idx": 3}]
+
+
 def _lv_net(pp):
     """MV/LV feeder with a fuse (bus-bus), a line switch, a bus-bus CB and an open tie."""
     net = pp.create_empty_network(sn_mva=1.0)
@@ -130,3 +157,6 @@ def test_switch_edges_and_zero_conflicts():
 
     res = dke.count_reachability_conflicts(bus, branch, max_scenarios=None)
     assert res["conflict_buses"] == 0, res
+    # pandapower must not switch off branches only because their area is dead
+    br = dke.count_unexplained_branch_outages(bus, branch, max_scenarios=None)
+    assert br["unexplained_off_branches"] == 0, br
