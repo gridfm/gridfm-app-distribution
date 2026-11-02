@@ -68,6 +68,12 @@ dependencies = [
     "psutil",
     "tqdm",
 ]
+[project.urls]
+Homepage = "https://github.com/gridfm/gridfm-app-distribution"
+Documentation = "https://gridfm.github.io/gridfm-app-distribution"
+Source = "https://github.com/gridfm/gridfm-app-distribution"
+Issues = "https://github.com/gridfm/gridfm-app-distribution/issues"
+
 [project.optional-dependencies]
 dev = [
   "mkdocs-material",
