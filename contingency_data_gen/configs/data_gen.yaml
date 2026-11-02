@@ -20,29 +20,49 @@ defaults:
   run_validation: true        # print validate_generated_data() after each job
   continue_on_error: true     # if a job fails, log and move on to the next
 
-# Details of the scenario
-# Add each scenario separately
+# Details of the scenarios - Add each scenario separately
+# Network loader to pandapower using 5 different flags
+# Flag 1 - Network loaded from Excel sheet in raw format of networks/case33meshed.xlsx
+# Flag 2 - Network loaded from Excel sheet in raw format of networks/IEEE-342.xlsx
+# Flag 3 - Network loaded from Excel sheet in raw format of networks/European_LV.xlsx
+# Flag 9 - Network loaded from yaml file in /networks using custom network builder in netbuilder
+# Flag 10 - Network loaded from MATPOWER m file in /networks
+
 scenarios:
-  - name: kerber_1 # kerber_vorstadtnetz_kabel_1 to N-2
-    network_file_path: null
-    flag: null
-    output_dir: data/scenario_kerber_1
+  - name: case33meshed # case33meshed to N-2
+    network_file_path: networks/case33meshed.xlsx
+    flag: 1
+    output_dir: data/scenario_33meshed
     max_n_level: 2
     max_size: 500
-    builtin_network: "create_kerber_vorstadtnetz_kabel_1"
 
-  - name: kerber_2 # kerber_vorstadtnetz_kabel_2 to N-2
-    network_file_path: null
-    flag: null
-    output_dir: data/scenario_kerber_2
+  - name: IEEE-342 # # IEEE-342 Note LVNTS to N-2
+    network_file_path: networks/IEEE-342.xlsx
+    flag: 2
+    output_dir: data/scenario_IEEE-342
     max_n_level: 2
     max_size: 500
-    builtin_network: "create_kerber_vorstadtnetz_kabel_2"
 
-  - name: CIGRE_LV # CIGRE LV network to N-3
-    network_file_path: null
-    flag: null
-    output_dir: data/scenario_CIGRE_LV
-    max_n_level: 3
+  - name: European_LV # European LV Test network to N-2
+    network_file_path: networks/European_LV.xlsx
+    flag: 3
+    output_dir: data/scenario_European_LV
+    max_n_level: 2
     max_size: 500
-    builtin_network: "create_cigre_network_lv"
+
+  - name: rural_LV # rural_LV to N-2
+    network_file_path: null
+    flag: 9
+    output_dir: data/scenario_rural_LV
+    max_n_level: 2
+    max_size: 500
+    builtin_network: "netbuilder/rural_LV.yaml"
+
+  - name: JRC_two_substations # JRC Network - Two substations to N-2
+    network_file_path: null
+    flag: 10
+    output_dir: data/JRC_two_substations
+    max_n_level: 2
+    max_size: 500
+    builtin_network: "networks/matpower_two_substations.m"
+
