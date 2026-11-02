@@ -192,6 +192,7 @@ class ScenarioGenerator:
         # Store component indices
         self._index_components()
         self._build_branch_templates()
+        self._snapshot_base_state()
         print(
             f"Network loaded: {len(self.net.bus)} buses, {len(self.net.line)} lines, {len(self.net.gen)} generators, {len(self.net.trafo)} trafos, {len(self.net.switch)} switches",
         )
@@ -204,9 +205,13 @@ class ScenarioGenerator:
         self.ref_bus = (
             self.net.ext_grid.bus.iloc[0] if len(self.net.ext_grid) > 0 else None
         )
+        # Every ext_grid bus is a source that each scenario forces back into
+        # service, so none of them can be a bus contingency (a flagged-but-forced
+        # source would contradict its own label).
+        ext_grid_buses = {int(b) for b in self.net.ext_grid.bus.values}
         self.component_indices["buses"] = [
-            idx for idx in self.net.bus.index if idx != self.ref_bus
-        ]  # Buses (excluding reference bus)
+            idx for idx in self.net.bus.index if int(idx) not in ext_grid_buses
+        ]  # Buses (excluding the ext_grid / reference buses)
         self.component_indices["lines"] = list(self.net.line.index)  # Lines
         self.component_indices["gens"] = list(self.net.gen.index)  # Generators
         self.component_indices["trafos"] = list(self.net.trafo.index)  # Transformers
@@ -261,6 +266,67 @@ class ScenarioGenerator:
 
         self.branch_templates = [branch_map[key] for key in sorted(branch_map)]
         print(f"Built {len(self.branch_templates)} branch templates")
+
+    def _snapshot_base_state(self):
+        """
+        Record the pristine (base-case) element states once, right after loading.
+
+        Every scenario is applied on top of this snapshot and the network is put
+        back to it after each batch. Caching the "original" statuses from the
+        live network at the start of each batch is NOT safe: a worker process
+        keeps its network between batches, and the previous batch leaves its
+        last scenario applied, so later batches would inherit stale outages as
+        their base case (and in BUS/BRANCH_BASE_STATUS).
+
+        Base statuses for the VLD columns are the base *electrical* states:
+        lines / trafos must be in service with all their line / trafo switches
+        closed, and bus-bus switches closed and in service, so that the flags the
+        model sees reproduce the REF-reachability label exactly.
+
+        ext_grid buses are put in service here, as every scenario does, so their
+        BUS_BASE_STATUS matches the state the scenarios actually run with. Call
+        this again after editing the base network (e.g. opening a tie switch)
+        once the network has been loaded; otherwise the edit is reverted.
+        """
+        net = self.net
+        for bus_idx in net.ext_grid.bus.values:
+            net.bus.at[bus_idx, "in_service"] = True
+        self._base_state = {
+            "bus": net.bus.in_service.to_numpy(copy=True),
+            "line": net.line.in_service.to_numpy(copy=True),
+            "gen": net.gen.in_service.to_numpy(copy=True),
+            "trafo": net.trafo.in_service.to_numpy(copy=True),
+            "switch": net.switch.closed.to_numpy(copy=True),
+            "load": net.load.in_service.to_numpy(copy=True),
+        }
+        self._base_bus_status = {
+            int(bus_idx): int(bool(status))
+            for bus_idx, status in zip(net.bus.index, self._base_state["bus"])
+        }
+        self._base_line_status = {
+            int(line_idx): int(self._line_is_active(net, line_idx))
+            for line_idx in net.line.index
+        }
+        self._base_trafo_status = {
+            int(trafo_idx): int(self._trafo_is_active(net, trafo_idx))
+            for trafo_idx in net.trafo.index
+        }
+        self._base_switch_status = {
+            int(sw_idx): int(self._switch_is_active(net, sw_idx))
+            for sw_idx in dke.bus_bus_switches(net).index
+        }
+
+    def _restore_base_state(self, net):
+        """Put every element contingencies can touch back to the base snapshot."""
+        base = self._base_state
+        # Column assignment (not `.values[:] = ...`): writing through `.values`
+        # fails on pandas copy-on-write (read-only views).
+        net.bus["in_service"] = base["bus"].copy()
+        net.line["in_service"] = base["line"].copy()
+        net.gen["in_service"] = base["gen"].copy()
+        net.trafo["in_service"] = base["trafo"].copy()
+        net.switch["closed"] = base["switch"].copy()
+        net.load["in_service"] = base["load"].copy()
 
     def generate_contingency_scenarios(
         self,
@@ -395,26 +461,14 @@ class ScenarioGenerator:
         branch_results_list = []
         base_scenario_id = scenario_start_idx
 
-        # Cache original statuses once
-        original_bus_status = self.net.bus.in_service.to_numpy(copy=True)
-        original_line_status = self.net.line.in_service.to_numpy(copy=True)
-        original_gen_status = self.net.gen.in_service.to_numpy(copy=True)
-        original_trafo_status = self.net.trafo.in_service.to_numpy(copy=True)
-        original_switch_status = self.net.switch.closed.to_numpy(copy=True)
-        original_load_status = self.net.load.in_service.to_numpy(copy=True)
-        base_bus_status = {
-            int(bus_idx): int(bool(status))
-            for bus_idx, status in zip(self.net.bus.index, original_bus_status)
-        }
-        # Per-element base health (line / trafo) for the datakit per-branch layout.
-        base_line_status = {
-            int(line_idx): int(bool(status))
-            for line_idx, status in zip(self.net.line.index, original_line_status)
-        }
-        base_trafo_status = {
-            int(trafo_idx): int(bool(status))
-            for trafo_idx, status in zip(self.net.trafo.index, original_trafo_status)
-        }
+        # Base case: always the snapshot taken when the network was loaded,
+        # never the live network state (see _snapshot_base_state).
+        if not hasattr(self, "_base_state"):
+            self._snapshot_base_state()
+        base_bus_status = self._base_bus_status
+        base_line_status = self._base_line_status
+        base_trafo_status = self._base_trafo_status
+        base_switch_status = self._base_switch_status
 
         print(f"Running N-{n_level} batch with {len(scenarios)} scenarios...")
 
@@ -427,12 +481,7 @@ class ScenarioGenerator:
             )  # update global id for this scenario
 
             # reset state of network
-            self.net.bus.in_service.values[:] = original_bus_status
-            self.net.line.in_service.values[:] = original_line_status
-            self.net.gen.in_service.values[:] = original_gen_status
-            self.net.trafo.in_service.values[:] = original_trafo_status
-            self.net.switch.closed.values[:] = original_switch_status
-            self.net.load.in_service.values[:] = original_load_status
+            self._restore_base_state(self.net)
 
             # Apply contingencies in the scenario
             self.apply_contingency(self.net, scenario)
@@ -468,6 +517,7 @@ class ScenarioGenerator:
                     scenario,
                     base_line_status,
                     base_trafo_status,
+                    base_switch_status=base_switch_status,
                 )
                 if not bus_df.empty and not branch_df.empty:
                     bus_results_list.append(bus_df)
@@ -478,6 +528,9 @@ class ScenarioGenerator:
                 print(
                     f"Result extraction failed for scenario {global_scenario_id}: {e}",
                 )
+
+        # Leave the network in its base state for the next batch of this worker.
+        self._restore_base_state(self.net)
 
         # Combine batch results
         bus_results = (
@@ -558,17 +611,23 @@ class ScenarioGenerator:
         base_line_status: Dict[int, int],
         base_trafo_status: Dict[int, int],
         load_scenario_idx: int = 0,
+        base_switch_status: Optional[Dict[int, int]] = None,
     ) -> pd.DataFrame:
         """
         Extract per-branch results for a scenario in gridfm-datakit
-        `branch_data.parquet` layout (one row per physical line/trafo, with
-        idx/from_bus/to_bus, flows, series params and full Yff/Yft/Ytf/Ytt).
+        `branch_data.parquet` layout (one row per line, trafo and bus-bus
+        switch, with idx/from_bus/to_bus, flows, series params and full
+        Yff/Yft/Ytf/Ytt). Bus-bus switches are zero-impedance edges.
 
         This replaces the previous bus-pair-template + aggregated G/B output.
         The three VLD status columns are appended as a superset:
           - BRANCH_BASE_STATUS: healthy in the base network,
           - BRANCH_CONTINGENCY: directly-failed branch in this scenario,
           - BRANCH_STATUS: energised (active and both endpoints reachable).
+
+        A switch contingency is reported on the edge it acts on: a bus-bus
+        switch on its own edge, a line / trafo switch (et "l" / "t") on that
+        line / trafo, since opening it takes the line / trafo out of service.
         """
         contingency_lines = {
             int(comp_idx) for comp_type, comp_idx in scenario if comp_type == "line"
@@ -576,6 +635,17 @@ class ScenarioGenerator:
         contingency_trafos = {
             int(comp_idx) for comp_type, comp_idx in scenario if comp_type == "trafo"
         }
+        contingency_switches = set()
+        for comp_type, comp_idx in scenario:
+            if comp_type != "switch":
+                continue
+            row = net.switch.loc[comp_idx]
+            if row.et == "b":
+                contingency_switches.add(int(comp_idx))
+            elif row.et == "l":
+                contingency_lines.add(int(row.element))
+            elif row.et == "t":
+                contingency_trafos.add(int(row.element))
         return dke.extract_branch_frame(
             net,
             scenario_id=scenario_id,
@@ -589,6 +659,11 @@ class ScenarioGenerator:
             line_active_fn=self._line_is_active,
             trafo_active_fn=self._trafo_is_active,
             include_vld=True,
+            base_switch_status=base_switch_status
+            if base_switch_status is not None
+            else getattr(self, "_base_switch_status", None),
+            contingency_switches=contingency_switches,
+            switch_active_fn=self._switch_is_active,
         )
 
     def _compute_reachable_buses(self, net) -> Dict[int, bool]:
@@ -936,7 +1011,11 @@ class ScenarioGenerator:
         if invalid:
             raise ValueError(f"Column {column} contains non-binary values: {invalid}")
 
-    def validate_generated_data(self, admittance_tol: float = 1e-10) -> Dict[str, int]:
+    def validate_generated_data(
+        self,
+        admittance_tol: float = 1e-10,
+        reachability_check_scenarios: Optional[int] = 2000,
+    ) -> Dict[str, int]:
         """
         Validate the generated gridfm-datakit partitioned-parquet datasets.
 
@@ -946,7 +1025,11 @@ class ScenarioGenerator:
         - (scenario, bus) and (scenario, idx) keys are unique,
         - per-scenario row counts are constant,
         - scenario IDs align across bus / gen / branch,
-        - obvious status / admittance / voltage inconsistencies are reported.
+        - obvious status / admittance / voltage inconsistencies are reported,
+        - the BUS_STATUS label agrees with the REF-reachability the model can
+          derive from its input flags (``reachability_*`` keys; must be 0
+          conflicts), on up to ``reachability_check_scenarios`` scenarios
+          (None = all).
         """
         bus_required_columns = set(
             ["scenario"] + dke.BUS_DATAKIT_COLUMNS + dke.BUS_VLD_COLUMNS,
@@ -1023,7 +1106,25 @@ class ScenarioGenerator:
                 len(off_branch_with_admittance),
             ),
             "off_buses_with_nonzero_voltage": int(len(off_bus_with_voltage)),
+            "bus_bus_switch_edges_per_scenario": int(
+                len(dke.bus_bus_switches(self.net)),
+            )
+            if self.net is not None
+            else -1,
         }
+        reach = dke.count_reachability_conflicts(
+            bus_df,
+            branch_df,
+            max_scenarios=reachability_check_scenarios,
+        )
+        summary.update({f"reachability_{k}": v for k, v in reach.items()})
+        if reach["conflict_buses"]:
+            print(
+                f"WARNING: {reach['conflict_buses']} bus labels "
+                f"({reach['conflict_rate']:.2%}) disagree with the reachability the "
+                f"model can derive from its inputs, in {reach['scenarios_with_conflict']} "
+                f"of {reach['checked_scenarios']} checked scenarios.",
+            )
         # Write validation results to text file
         validation_file = os.path.join(self.output_dir, "validation.txt")
         with open(validation_file, "w") as f:

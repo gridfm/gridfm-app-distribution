@@ -47,6 +47,7 @@ from gridfm_app_dist.datasets.globals import (
     #####################
 )
 
+
 class BaseLoss(nn.Module, ABC):
     """
     Abstract base class for all custom loss functions.
@@ -403,25 +404,43 @@ class VLDTopologyLoss(BaseLoss):
       x_dict["bus"]      : standard bus features + [bus_base_status, bus_contingency]
       edge_attr          : standard edge attrs + [branch_base_status, branch_contingency]
 
-    Status supervision (paper eqs. 13-14) uses two BCE terms on the status logit z:
-    the primary term against the BFS reachability label y_reach and a secondary anchor against the dataset label y_target.
-    Where the two labels agree both terms push z the same way.
-    Where they disagree (conflict buses, C = {i : y_reach != y_target}) the dataset label is authoritative:
-    the topology BCE weight is zeroed and the anchor weight is set to the minority-class weight w_off,
-    so the stationary point of the logit is the label, whether it is 0 or 1.
-    The class balance and the voltage masks are keyed on that same supervised status,
-    so no bus is ever given a voltage target that contradicts its status target.
+    y_reach is the hard REF-reachability built from the input flags (BFS over
+    available branches through available buses, ``_build_graph_reachability``).
+    It is computed and used inside this loss only; MaskedMSE and PBE act on Vm
+    independently of it.
 
-    Class balance: the de-energised class is weighted by w_off = n_on / n_off (eq. 6).
-    Weighting the 0-class by w moves the optimum of the BCE from the true posterior q to q / (q + w (1 - q)),
-    so a fixed 0.5 decision threshold over-predicts de-energised.
-    The decision threshold is therefore not a arameter: it is always 1 / (1 + w_off),
-    which restores the boundary q = 0.5 and tracks w_off as it moves during training.
-    Use the same rule at inference (the threshold is returned as "VLD Decision Threshold" and w_off is stored in the ``ema_off_weight`` buffer).
+    Status head (status logit z), two BCE terms:
+      * topology term (primary) - BCE(z, y_reach) on EVERY bus, class-weighted on
+        y_reach: w_off = n_on / n_off of y_reach (eq. 6, EMA-smoothed) for
+        unreachable buses, 1 otherwise.
+      * anchor term (secondary) - BCE(z, y_target) against the dataset label, by
+        default only on conflict buses C = {i : y_reach != y_target}
+        (``anchor_scope: conflict``), unweighted by class and normalised by the
+        topology term's denominator. With target_anchor_weight < 1 the decision
+        on a conflict bus still follows reachability at the 1 / (1 + w_off)
+        threshold (the label only softens the probability). With correctly
+        generated data C is empty and the anchor is 0. ``anchor_scope: all`` applies the anchor to every bus,
+        class-weighted on the label (the earlier behaviour without conflict
+        overrides).
 
-    Tunable parameters (all others are fixed by the formulation):
+    Voltage head (Vm), independent of the status head:
+      * off-Vm term - Vm -> 0 (L2 + lambda_1 * L1) on buses with y_reach = 0;
+      * on-Vm term  - (Vm - Vm_target)^2 on buses with y_reach = 1.
+      Both masks come from y_reach only; neither the status logit nor its
+      probability enters the voltage terms, and the voltage terms do not enter
+      the status logit, so the two heads are trained independently. MaskedMSE
+      and PBE keep acting on Vm on their own (MaskedMSE's Vm target is 0 on
+      de-energised buses, so it reinforces the off-Vm term).
+
+    Decision threshold: weighting the 0-class by w moves the BCE optimum from the
+    posterior q to q / (q + w (1 - q)), so the threshold is 1 / (1 + w_off), which
+    restores the boundary q = 0.5 and tracks w_off. Use the same rule at inference
+    (returned as "VLD Decision Threshold"; w_off is stored in ``ema_off_weight``).
+
+    Tunable parameters:
       topology_weight, target_anchor_weight, off_vm_weight, on_vm_weight,
       unreachable_l1_weight  - the lambda_* of eq. (18) and lambda_1 of eq. (15)
+      anchor_scope           - "conflict" (default) or "all"
       topology_confidence_gamma - gamma of eq. (8), 0 disables
       reachability_sources   - "ref" or "ref_and_gen"
       unreachable_pos_weight - "auto" (n_on/n_off, EMA-smoothed) or a number
@@ -442,6 +461,14 @@ class VLDTopologyLoss(BaseLoss):
             "topology_confidence_gamma",
             0.0,
         )
+
+        # Where the dataset-label anchor applies: "conflict" (secondary anchor on
+        # buses where the label disagrees with reachability) or "all" buses.
+        self.anchor_scope = getattr(loss_args, "anchor_scope", "conflict")
+        if self.anchor_scope not in ("conflict", "all"):
+            raise ValueError(
+                f"loss.anchor_scope must be 'conflict' or 'all', got {self.anchor_scope!r}.",
+            )
 
         # Which buses count as energisation sources for the reachability BFS.
         #   "ref"         only the slack / ext_grid buses (REF_H).
@@ -625,12 +652,11 @@ class VLDTopologyLoss(BaseLoss):
         edge_index = edge_index_dict[("bus", "connects", "bus")]
         edge_attr = edge_attr_dict[("bus", "connects", "bus")]
 
-        num_bus = bus_pred.size(0)
         device = bus_pred.device
 
-        # Build graph reachability to get reachable bus
+        # REF-reachability from the input flags (used by this loss only).
         topo_target, bus_available = self._build_graph_reachability(
-            num_bus=num_bus,
+            num_bus=bus_pred.size(0),
             edge_index=edge_index,
             edge_attr=edge_attr,
             bus_x=bus_x,
@@ -668,40 +694,43 @@ class VLDTopologyLoss(BaseLoss):
             ones,
         )
 
-        # omega_i, eq. (8), zeroed on conflict buses: the topology signal that contradicts the label is removed there.
-        topology_weights = torch.where(
-            conflict,
-            torch.zeros_like(topo_target),
-            topology_confidence * class_weight,
-        )
-
-        # nu_i, eq. (9): class weight keyed on the dataset label, raised to w_off on conflict buses in BOTH label directions,
-        # so a conflicting label carries the minority-class emphasis whichever way it points.
-        # Together with the zeroed omega_i this puts the stationary point of the logit at y_target itself (0 or 1) on every conflict bus.
-        anchor_weights = torch.where(
-            (target_status < 0.5) | conflict,
-            off_weight.expand_as(target_status),
-            ones,
-        )
+        # omega_i, eq. (8): the topology (reachability) term is the primary status
+        # supervision on EVERY bus, conflict buses included.
+        topology_weights = topology_confidence * class_weight
         topology_bce_raw = F.binary_cross_entropy_with_logits(
             status_logit,
             topo_target,
             reduction="none",
         )
-        topology_bce = (topology_weights * topology_bce_raw).sum() / (
-            topology_weights.sum().clamp_min(1e-8)
-        )
+        topology_norm = topology_weights.sum().clamp_min(1e-8)
+        topology_bce = (topology_weights * topology_bce_raw).sum() / topology_norm
 
+        # nu_i, eq. (9): dataset-label anchor, secondary.
         anchor_bce_raw = F.binary_cross_entropy_with_logits(
             status_logit,
             target_status,
             reduction="none",
         )
-        target_anchor_bce = (anchor_weights * anchor_bce_raw).sum() / (
-            anchor_weights.sum().clamp_min(1e-8)
-        )
+        if self.anchor_scope == "conflict":
+            # Only where the label disagrees with reachability, WITHOUT the class
+            # weight and over the topology term's denominator. On a conflict bus the
+            # optimum then lies on the reachability side of the 1 / (1 + w_off)
+            # decision threshold whenever target_anchor_weight < 1, in both
+            # directions (reach 0 / label 1 and reach 1 / label 0).
+            anchor_weights = topology_confidence * conflict.float()
+            target_anchor_bce = (anchor_weights * anchor_bce_raw).sum() / topology_norm
+        else:
+            anchor_weights = torch.where(
+                target_status < 0.5,
+                off_weight.expand_as(target_status),
+                ones,
+            )
+            target_anchor_bce = (anchor_weights * anchor_bce_raw).sum() / (
+                anchor_weights.sum().clamp_min(1e-8)
+            )
 
-        # Voltage supervision follows the same topo status of the logit
+        # Voltage supervision is keyed on reachability ONLY. The status logit and
+        # its probability never enter the voltage terms (independent heads).
         unreachable_mask = (topo_target < 0.5).float()
         reachable_mask = (topo_target >= 0.5).float()
 
@@ -713,9 +742,8 @@ class VLDTopologyLoss(BaseLoss):
         ).sum() / unreachable_mask.sum().clamp_min(1.0)
         off_vm_loss = off_vm_l2 + self.unreachable_l1_weight * off_vm_l1
 
-        on_vm_w = reachable_mask * status_prob.detach()
-        on_vm_sq = ((pred_vm - target_vm) ** 2) * on_vm_w
-        on_vm_loss = on_vm_sq.sum() / on_vm_w.sum().clamp_min(1e-8)
+        on_vm_sq = ((pred_vm - target_vm) ** 2) * reachable_mask
+        on_vm_loss = on_vm_sq.sum() / reachable_mask.sum().clamp_min(1.0)
 
         total_loss = (
             self.topology_weight * topology_bce
@@ -765,7 +793,8 @@ class VLDTopologyLoss(BaseLoss):
             # Split the disagreement by direction: reach=0/label=1 is the case that the legacy "zero" rule turned into false de-energisations.
             conflict_label_on = (conflict & on_true).float().mean()
             conflict_label_off = (conflict & off_true).float().mean()
-            off_rate = (topo_target < 0.5).float().mean()
+            off_rate_reach = (topo_target < 0.5).float().mean()
+            off_rate_label = off_true.float().mean()
 
         return {
             "loss": total_loss,
@@ -781,7 +810,8 @@ class VLDTopologyLoss(BaseLoss):
             "VLD Off F1": f1_off,
             "VLD On Recall": recall_on,
             "VLD Mean Prob (reachable & label 1)": mean_prob_clear_on,
-            "VLD Off Rate (labels)": off_rate,
+            "VLD Off Rate (labels)": off_rate_label,
+            "VLD Off Rate (reachability)": off_rate_reach,
             "VLD Topo-vs-Target Disagreement": topo_vs_target,
             "VLD Conflict Rate (reach 0, label 1)": conflict_label_on,
             "VLD Conflict Rate (reach 1, label 0)": conflict_label_off,

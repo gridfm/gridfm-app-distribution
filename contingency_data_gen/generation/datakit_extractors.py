@@ -26,12 +26,21 @@ topology-status supervision columns):
     bus     : + BUS_BASE_STATUS, BUS_CONTINGENCY, BUS_STATUS
     branch  : + BRANCH_BASE_STATUS, BRANCH_CONTINGENCY, BRANCH_STATUS
 
+Branch rows are lines, then trafos, then bus-bus switches (``net.switch`` rows
+with ``et == "b"``). A bus-bus switch is exported as a zero-impedance edge
+(r = x = b = 0, so every Y element is 0) so the model sees the connection, and
+its base status / contingency flag / energisation label are carried in the VLD
+columns exactly like a line's. Without these rows the buses a closed switch
+joins are disconnected in the graph, while the REF-reachability label
+(``ScenarioGenerator._compute_reachable_buses``) treats them as connected.
+Line and trafo switches (``et`` in ``"l"``/``"t"``) are not separate edges:
+their state is folded into the status columns of the line / trafo they sit on.
+
 Design notes
 ------------
 * Every column is produced by its own small function (`bus_col_*`,
-  `gen_col_*`, `branch_col_*`) so each mapping is auditable and testable in
-  isolation, exactly as requested. The public assemblers
-  (`extract_bus_frame`, `extract_gen_frame`, `extract_branch_frame`) simply
+  `gen_col_*`, `branch_col_*`) so each mapping is auditable and testable in isolation,
+  The public assemblers (`extract_bus_frame`, `extract_gen_frame`, `extract_branch_frame`) simply
   call the per-column functions in schema order.
 * Sign / unit conventions follow datakit:
     - Pd, Qd, Pg, Qg, p_mw, q_mvar, pf/qf/pt/qt are in MW / MVAr.
@@ -416,24 +425,49 @@ def gen_col_is_slack_gen(net):
 # ===========================================================================
 # BRANCH: per-column extraction functions
 # ===========================================================================
-# Branch here means a *physical* branch (line or trafo), one row per element,
-# matching datakit's per-branch layout. We build a unified branch table by
-# concatenating lines then trafos and pulling the MATPOWER per-unit params
-# from net._ppc["branch"].
+# Branch here means a *physical* branch (line, trafo or bus-bus switch), one
+# row per element, matching datakit's per-branch layout. We build a unified
+# branch table by concatenating lines, then trafos, then bus-bus switches. Line
+# and trafo params come from net._ppc["branch"]; pandapower fuses the buses of a
+# closed bus-bus switch instead of giving it a ppc row, so switch rows are
+# appended here as zero-impedance edges (r = x = b = 0 -> all Y elements 0).
+
+
+def bus_bus_switches(net):
+    """Bus-bus switches (``et == "b"``) in ``net.switch`` index order."""
+    if len(net.switch) == 0:
+        return net.switch.iloc[0:0]
+    return net.switch[net.switch.et == "b"].sort_index()
+
+
+def switch_is_closed_and_in_service(net, switch_idx):
+    """Electrical state of one switch: closed and (if the column exists) in service."""
+    row = net.switch.loc[switch_idx]
+    in_service = bool(row["in_service"]) if "in_service" in net.switch.columns else True
+    return in_service and bool(row["closed"])
 
 
 def build_branch_static(net, base_mva):
     """Assemble the static per-branch table (params + admittances).
 
     Returns a dict of arrays keyed by branch column name plus helper keys
-    `_line_idx` / `_trafo_idx` and the mapping needed to fill flow results.
-    Row order: all lines (in net.line order) then all trafos (in net.trafo
-    order) — this matches how pandapower stacks them into ppc["branch"].
+    `_n_line` / `_n_trafo` / `_n_switch` and `_switch_idx`.
+    Row order: all lines (in net.line order), then all trafos (in net.trafo
+    order) — this matches how pandapower stacks them into ppc["branch"] — then
+    all bus-bus switches (in net.switch order), which have no ppc row.
+
+    Switch rows: from_bus = switch.bus, to_bus = switch.element, r = x = b = 0
+    (every admittance element is therefore 0), tap = 1, shift = 0, the default
+    angle limits, rate_a = 0, and br_status = 1 when the switch is closed and in
+    service in this scenario (0 otherwise, like an out-of-service line).
     """
     ppc_branch = net._ppc["branch"]
     n_line = len(net.line)
     n_trafo = len(net.trafo)
-    n_branch = n_line + n_trafo
+    switches = bus_bus_switches(net)
+    n_switch = len(switches)
+    n_phys = n_line + n_trafo  # rows that have a ppc["branch"] counterpart
+    n_branch = n_phys + n_switch
 
     from_bus = np.zeros(n_branch, dtype=np.int64)
     to_bus = np.zeros(n_branch, dtype=np.int64)
@@ -454,9 +488,16 @@ def build_branch_static(net, base_mva):
     for j, (_, row) in enumerate(net.trafo.iterrows()):
         from_bus[n_line + j] = int(row.hv_bus)
         to_bus[n_line + j] = int(row.lv_bus)
+    for k, (sw_idx, row) in enumerate(switches.iterrows()):
+        from_bus[n_phys + k] = int(row.bus)
+        to_bus[n_phys + k] = int(row.element)
+        # r, x, b, shift, rate_a stay 0, tap stays 1, angle limits stay default.
+        br_status[n_phys + k] = int(switch_is_closed_and_in_service(net, sw_idx))
 
     # Electrical params (system p.u.) from the MATPOWER-format ppc branch matrix.
-    m = min(ppc_branch.shape[0], n_branch)
+    # Only line and trafo rows have a ppc counterpart; never read past them
+    # (ppc rows after the trafos are impedances / xwards, not our switches).
+    m = min(ppc_branch.shape[0], n_phys)
     r[:m] = np.real(ppc_branch[:m, BR_R]).astype(float)
     x[:m] = np.real(ppc_branch[:m, BR_X]).astype(float)
     b[:m] = np.real(ppc_branch[:m, BR_B]).astype(float)
@@ -496,17 +537,23 @@ def build_branch_static(net, base_mva):
         "br_status": br_status,
         "_n_line": n_line,
         "_n_trafo": n_trafo,
+        "_n_switch": n_switch,
+        "_switch_idx": np.asarray(switches.index, dtype=np.int64),
     }
 
 
 def branch_flows(net):
-    """Return pf, qf, pt, qt arrays (MW/MVAr) for lines then trafos.
+    """Return pf, qf, pt, qt arrays (MW/MVAr) for lines, trafos, then bus-bus switches.
 
-    Missing/NaN results (e.g. de-energised branch) map to 0.0.
+    Missing/NaN results (e.g. de-energised branch) map to 0.0. Switch flows are
+    read from ``net.res_switch`` when this pandapower version reports them
+    (``p_from_mw`` ...); otherwise they are 0.
     """
     n_line = len(net.line)
     n_trafo = len(net.trafo)
-    n = n_line + n_trafo
+    switches = bus_bus_switches(net)
+    n_switch = len(switches)
+    n = n_line + n_trafo + n_switch
     pf = np.zeros(n)
     qf = np.zeros(n)
     pt = np.zeros(n)
@@ -529,39 +576,89 @@ def branch_flows(net):
         )
     if n_trafo:
         rt = net.res_trafo
-        pf[n_line:] = np.nan_to_num(rt.p_hv_mw.reindex(net.trafo.index).values, nan=0.0)
-        qf[n_line:] = np.nan_to_num(
+        pf[n_line : n_line + n_trafo] = np.nan_to_num(
+            rt.p_hv_mw.reindex(net.trafo.index).values,
+            nan=0.0,
+        )
+        qf[n_line : n_line + n_trafo] = np.nan_to_num(
             rt.q_hv_mvar.reindex(net.trafo.index).values,
             nan=0.0,
         )
-        pt[n_line:] = np.nan_to_num(rt.p_lv_mw.reindex(net.trafo.index).values, nan=0.0)
-        qt[n_line:] = np.nan_to_num(
+        pt[n_line : n_line + n_trafo] = np.nan_to_num(
+            rt.p_lv_mw.reindex(net.trafo.index).values,
+            nan=0.0,
+        )
+        qt[n_line : n_line + n_trafo] = np.nan_to_num(
             rt.q_lv_mvar.reindex(net.trafo.index).values,
             nan=0.0,
         )
+    rs = getattr(net, "res_switch", None)
+    if n_switch and rs is not None and len(rs):
+        s0 = n_line + n_trafo
+        for out, col in (
+            (pf, "p_from_mw"),
+            (qf, "q_from_mvar"),
+            (pt, "p_to_mw"),
+            (qt, "q_to_mvar"),
+        ):
+            if col in rs.columns:
+                out[s0:] = np.nan_to_num(
+                    rs[col].reindex(switches.index).values.astype(float),
+                    nan=0.0,
+                )
     return pf, qf, pt, qt
 
 
 # --- VLD extension columns (branch) ---------------------------------------
-def branch_col_BRANCH_BASE_STATUS(net, static, base_line_status, base_trafo_status):
-    """Healthy-in-base indicator per physical branch (VLD context)."""
+def branch_col_BRANCH_BASE_STATUS(
+    net,
+    static,
+    base_line_status,
+    base_trafo_status,
+    base_switch_status=None,
+):
+    """Healthy-in-base indicator per branch (VLD context).
+
+    For lines / trafos this should be the base *electrical* state, i.e.
+    in service AND every line / trafo switch on it closed; for bus-bus switches
+    it is closed AND in service in the base network.
+    """
     n_line = static["_n_line"]
+    n_phys = n_line + static["_n_trafo"]
+    base_switch_status = base_switch_status or {}
     out = np.ones(len(static["idx"]), dtype=np.int64)
     for i, line_idx in enumerate(net.line.index):
         out[i] = int(base_line_status.get(int(line_idx), 1))
     for j, trafo_idx in enumerate(net.trafo.index):
         out[n_line + j] = int(base_trafo_status.get(int(trafo_idx), 1))
+    for k, sw_idx in enumerate(static.get("_switch_idx", [])):
+        out[n_phys + k] = int(base_switch_status.get(int(sw_idx), 1))
     return out
 
 
-def branch_col_BRANCH_CONTINGENCY(net, static, contingency_lines, contingency_trafos):
-    """1 where the physical branch is a directly-failed contingency (VLD)."""
+def branch_col_BRANCH_CONTINGENCY(
+    net,
+    static,
+    contingency_lines,
+    contingency_trafos,
+    contingency_switches=None,
+):
+    """1 where the branch is a directly-failed contingency element (VLD).
+
+    ``contingency_lines`` / ``contingency_trafos`` should already include the
+    lines / trafos whose own line / trafo switch is opened by the scenario;
+    ``contingency_switches`` holds the bus-bus switches opened by the scenario.
+    """
     n_line = static["_n_line"]
+    n_phys = n_line + static["_n_trafo"]
+    contingency_switches = contingency_switches or set()
     out = np.zeros(len(static["idx"]), dtype=np.int64)
     for i, line_idx in enumerate(net.line.index):
         out[i] = int(int(line_idx) in contingency_lines)
     for j, trafo_idx in enumerate(net.trafo.index):
         out[n_line + j] = int(int(trafo_idx) in contingency_trafos)
+    for k, sw_idx in enumerate(static.get("_switch_idx", [])):
+        out[n_phys + k] = int(int(sw_idx) in contingency_switches)
     return out
 
 
@@ -571,6 +668,7 @@ def branch_col_BRANCH_STATUS(
     reachable_buses,
     line_active_fn,
     trafo_active_fn,
+    switch_active_fn=None,
 ):
     """Post-contingency branch energisation label (VLD target).
 
@@ -590,6 +688,16 @@ def branch_col_BRANCH_STATUS(
     for j, trafo_idx in enumerate(net.trafo.index):
         k = n_line + j
         active = trafo_active_fn(net, trafo_idx)
+        out[k] = int(
+            active
+            and bool(reachable_buses.get(int(fb[k]), False))
+            and bool(reachable_buses.get(int(tb[k]), False)),
+        )
+    switch_active_fn = switch_active_fn or switch_is_closed_and_in_service
+    n_phys = n_line + static["_n_trafo"]
+    for s, sw_idx in enumerate(static.get("_switch_idx", [])):
+        k = n_phys + s
+        active = switch_active_fn(net, int(sw_idx))
         out[k] = int(
             active
             and bool(reachable_buses.get(int(fb[k]), False))
@@ -749,8 +857,14 @@ def extract_branch_frame(
     line_active_fn,
     trafo_active_fn,
     include_vld=True,
+    base_switch_status=None,
+    contingency_switches=None,
+    switch_active_fn=None,
 ):
-    """Build the branch DataFrame for one solved scenario (datakit + VLD cols)."""
+    """Build the branch DataFrame for one solved scenario (datakit + VLD cols).
+
+    One row per line, trafo and bus-bus switch (see ``build_branch_static``).
+    """
     static = build_branch_static(net, base_mva)
     pf, qf, pt, qt = branch_flows(net)
     n = len(static["idx"])
@@ -788,12 +902,14 @@ def extract_branch_frame(
             static,
             base_line_status,
             base_trafo_status,
+            base_switch_status,
         )
         frame["BRANCH_CONTINGENCY"] = branch_col_BRANCH_CONTINGENCY(
             net,
             static,
             contingency_lines,
             contingency_trafos,
+            contingency_switches,
         )
         frame["BRANCH_STATUS"] = branch_col_BRANCH_STATUS(
             net,
@@ -801,6 +917,7 @@ def extract_branch_frame(
             reachable_buses,
             line_active_fn,
             trafo_active_fn,
+            switch_active_fn,
         )
     cols = (
         ["scenario"]
@@ -808,3 +925,91 @@ def extract_branch_frame(
         + (BRANCH_VLD_COLUMNS if include_vld else [])
     )
     return pd.DataFrame(frame)[cols]
+
+
+# ===========================================================================
+# Consistency check: flag-based reachability vs the BUS_STATUS label
+# ===========================================================================
+def reachability_from_flags(bus_frame, branch_frame, sources="ref"):
+    """REF-reachability a model can derive from ONE scenario's input flags.
+
+    Mirrors ``VLDTopologyLoss._build_graph_reachability`` on the graph the
+    model is given: edges with ``br_status == 1`` (the VLD transforms drop the
+    others), a branch is available when BRANCH_BASE_STATUS = 1 and
+    BRANCH_CONTINGENCY = 0, a bus when BUS_BASE_STATUS = 1 and
+    BUS_CONTINGENCY = 0, and the seeds are the available REF buses (plus PV
+    buses for ``sources="ref_and_gen"``). Returns a bool array aligned with the
+    rows of ``bus_frame``.
+    """
+    bus_ids = bus_frame["bus"].to_numpy()
+    pos = {int(b): i for i, b in enumerate(bus_ids)}
+    n = len(bus_ids)
+    available = (bus_frame["BUS_BASE_STATUS"].to_numpy() > 0.5) & (
+        bus_frame["BUS_CONTINGENCY"].to_numpy() < 0.5
+    )
+    is_source = bus_frame["REF"].to_numpy() > 0.5
+    if sources == "ref_and_gen":
+        is_source = is_source | (bus_frame["PV"].to_numpy() > 0.5)
+
+    keep = (
+        (branch_frame["br_status"].to_numpy() > 0.5)
+        & (branch_frame["BRANCH_BASE_STATUS"].to_numpy() > 0.5)
+        & (branch_frame["BRANCH_CONTINGENCY"].to_numpy() < 0.5)
+    )
+    adjacency = [[] for _ in range(n)]
+    for f, t in zip(
+        branch_frame["from_bus"].to_numpy()[keep],
+        branch_frame["to_bus"].to_numpy()[keep],
+    ):
+        i, j = pos[int(f)], pos[int(t)]
+        adjacency[i].append(j)
+        adjacency[j].append(i)
+
+    reachable = np.zeros(n, dtype=bool)
+    stack = [i for i in range(n) if available[i] and is_source[i]]
+    for i in stack:
+        reachable[i] = True
+    while stack:
+        i = stack.pop()
+        for j in adjacency[i]:
+            if available[j] and not reachable[j]:
+                reachable[j] = True
+                stack.append(j)
+    return reachable
+
+
+def count_reachability_conflicts(bus_df, branch_df, max_scenarios=2000, seed=0):
+    """Compare flag-based reachability with BUS_STATUS on (a sample of) scenarios.
+
+    A conflict is a bus whose BUS_STATUS label differs from what the model can
+    derive from its inputs (see ``reachability_from_flags``). With switches
+    exported as edges and switch contingencies flagged this must be 0; any
+    other value means the labels encode information the model cannot see.
+    """
+    scenarios = np.sort(bus_df["scenario"].unique())
+    if max_scenarios is not None and len(scenarios) > max_scenarios:
+        rng = np.random.default_rng(seed)
+        scenarios = np.sort(rng.choice(scenarios, size=max_scenarios, replace=False))
+    bus_groups = bus_df[bus_df["scenario"].isin(scenarios)].groupby("scenario")
+    branch_groups = branch_df[branch_df["scenario"].isin(scenarios)].groupby("scenario")
+    n_bus = n_conflict = n_reach0_label1 = n_reach1_label0 = 0
+    scenarios_with_conflict = 0
+    for scenario, bus_frame in bus_groups:
+        reach = reachability_from_flags(bus_frame, branch_groups.get_group(scenario))
+        label = bus_frame["BUS_STATUS"].to_numpy() > 0.5
+        r0l1 = int((~reach & label).sum())
+        r1l0 = int((reach & ~label).sum())
+        n_bus += len(label)
+        n_reach0_label1 += r0l1
+        n_reach1_label0 += r1l0
+        n_conflict += r0l1 + r1l0
+        scenarios_with_conflict += int(r0l1 + r1l0 > 0)
+    return {
+        "checked_scenarios": int(len(scenarios)),
+        "checked_buses": int(n_bus),
+        "conflict_buses": int(n_conflict),
+        "conflict_rate": float(n_conflict / n_bus) if n_bus else 0.0,
+        "conflict_reach0_label1": int(n_reach0_label1),
+        "conflict_reach1_label0": int(n_reach1_label0),
+        "scenarios_with_conflict": int(scenarios_with_conflict),
+    }

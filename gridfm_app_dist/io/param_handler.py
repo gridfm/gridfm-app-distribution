@@ -90,11 +90,15 @@ def get_loss_function(args):
               reachability_sources: ref       # or ref_and_gen
               input_state_threshold: 0.5
               topology_confidence_gamma: 0.0  # 0 disables (recommended)
+              anchor_scope: conflict          # label anchor on conflict buses only, or "all"
           loss_weights: [1.0]
     The decision threshold is not configurable: the loss derives it as
     1 / (1 + w_off) and the VLD task reads it back at test / predict time.
-    Conflicts between the BFS label and the dataset label are always resolved
-    toward the dataset label.
+    The status head is supervised primarily by the BFS reachability y_reach
+    (class weights from y_reach); the dataset label is a secondary anchor on
+    buses where the two disagree. The voltage terms are keyed on y_reach only.
+    Reachability is computed inside VLDTopologyLoss only; MaskedMSE and PBE act
+    on Vm independently of it.
     """
     loss_functions = []
     for loss_name, loss_args in zip(args.training.losses, args.training.loss_args):
