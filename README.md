@@ -9,7 +9,7 @@ GridFM Distribution appkit`gridfm-app-distribution` is a Python library to train
 Specialised training tasks can be developed for specific distribution applications.
 
 
-# Installation
+## Installation
 
 Create and activate a virtual environment (make sure you use the right python version = 3.10, 3.11, 3.12 or 3.13.)
 ```
@@ -43,7 +43,7 @@ pip install "gridfm-app-distribution[dev,test]"
 ```
 
 
-# Generating training data (`contingency_data_gen`)
+## Generating training data (`contingency_data_gen`)
 
 The repository ships a second application, `contingency_data_gen`, that builds
 distribution networks and runs N-k contingency analyses with pandapower, writing
@@ -76,7 +76,7 @@ networks from the standard-type catalogue in `contingency_data_gen.netlib`.
 
 ---
 
-# CLI commands
+## CLI commands
 
 Interface to train, fine-tune, evaluate, and run inference on GridFM models of distribution networks using YAML configs and MLflow tracking.
 

@@ -84,7 +84,11 @@ OPTIONAL = ("status_pred", "vm_pred", "vm_true")
 # Fine probability histogram (logit scale) used for ROC-AUC, AP, ECE and the curves.
 N_FINE = 65536
 LOGIT_LO, LOGIT_HI = -40.0, 40.0
-SEP_EDGES = np.linspace(0,1,41)  # same bins as vld_evaluation.plot_probability_separation
+SEP_EDGES = np.linspace(
+    0,
+    1,
+    41,
+)  # same bins as vld_evaluation.plot_probability_separation
 N_ECE_BINS = 10
 SCATTER_POINTS = 20000  # same total as vld_evaluation.plot_voltage_status
 BOOT_KEYS = (
