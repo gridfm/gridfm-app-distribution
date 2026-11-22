@@ -84,7 +84,7 @@ OPTIONAL = ("status_pred", "vm_pred", "vm_true")
 # Fine probability histogram (logit scale) used for ROC-AUC, AP, ECE and the curves.
 N_FINE = 65536
 LOGIT_LO, LOGIT_HI = -40.0, 40.0
-SEP_EDGES = np.linspace(0, 1, 41)  # same bins as vld_evaluation.plot_probability_separation
+SEP_EDGES = np.linspace(0,1,41)  # same bins as vld_evaluation.plot_probability_separation
 N_ECE_BINS = 10
 SCATTER_POINTS = 20000  # same total as vld_evaluation.plot_voltage_status
 BOOT_KEYS = (
@@ -131,7 +131,9 @@ def _peak_rss_gb() -> float:
     try:
         import resource
 
-        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2  # KB on Linux
+        return (
+            resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2
+        )  # KB on Linux
     except Exception:  # Windows: no resource module
         return float("nan")
 
@@ -209,7 +211,11 @@ def _compact(chunk: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
 # ----------------------------------------------------------------------------
 # Pass 1: scan
 # ----------------------------------------------------------------------------
-def scan_file(path: str, batch_rows: int = 1_000_000, use_threads: bool = False) -> dict:
+def scan_file(
+    path: str,
+    batch_rows: int = 1_000_000,
+    use_threads: bool = False,
+) -> dict:
     """Count rows and scenarios, collect bus ids and threshold, check scenario contiguity."""
     names = _column_names(path)
     missing = [c for c in REQUIRED if c not in names]
@@ -275,7 +281,14 @@ def _concat(pieces: List[Dict[str, np.ndarray]]) -> Dict[str, np.ndarray]:
 
 
 def _iter_groups_contiguous(
-    path, cols, group_size, n_groups, batch_rows, use_threads, skip, stop_after
+    path,
+    cols,
+    group_size,
+    n_groups,
+    batch_rows,
+    use_threads,
+    skip,
+    stop_after,
 ) -> Iterator[Tuple[int, Dict[str, np.ndarray]]]:
     """One streaming pass. Group k = scenarios k*G .. (k+1)*G-1 in order of appearance.
 
@@ -312,7 +325,13 @@ def _iter_groups_contiguous(
 
 
 def _iter_groups_by_id(
-    path, cols, hi_ids, batch_rows, use_threads, skip, stop_after
+    path,
+    cols,
+    hi_ids,
+    batch_rows,
+    use_threads,
+    skip,
+    stop_after,
 ) -> Iterator[Tuple[int, Dict[str, np.ndarray]]]:
     """Fallback when a scenario's rows are scattered: one pass over the file per group.
 
@@ -325,7 +344,11 @@ def _iter_groups_by_id(
             continue
         pieces = []
         for ch in _iter_chunks(path, cols, batch_rows, use_threads):
-            g = np.searchsorted(hi_ids, ch["scenario"].astype(np.int64, copy=False), "left")
+            g = np.searchsorted(
+                hi_ids,
+                ch["scenario"].astype(np.int64, copy=False),
+                "left",
+            )
             m = g == k
             if m.any():
                 pieces.append(_compact({c: v[m] for c, v in ch.items()}))
@@ -387,7 +410,9 @@ def group_statistics(
     bus = d["bus"].astype(np.int64, copy=False)
     bi = np.searchsorted(bus_ids, bus)
     if bi.max() >= bus_ids.size or not np.array_equal(bus_ids[bi], bus):
-        raise ValueError("bus id not seen in the scan; the file changed during the run?")
+        raise ValueError(
+            "bus id not seen in the scan; the file changed during the run?",
+        )
     yo, po = y == 0, pred == 0
     nb = bus_ids.size
     st["bus_n"] = np.bincount(bi, minlength=nb).astype(np.int64)
@@ -400,8 +425,12 @@ def group_statistics(
     st["scen_id"] = scen_u.astype(np.int64)
     st["scen_tp"] = np.bincount(inv[on & pon], minlength=ns).astype(np.int32)
     st["scen_tn"] = np.bincount(inv[~on & ~pon], minlength=ns).astype(np.int32)
-    st["scen_missed"] = np.bincount(inv[(pred == 1) & (y == 0)], minlength=ns).astype(np.int32)
-    st["scen_alarm"] = np.bincount(inv[(pred == 0) & (y == 1)], minlength=ns).astype(np.int32)
+    st["scen_missed"] = np.bincount(inv[(pred == 1) & (y == 0)], minlength=ns).astype(
+        np.int32,
+    )
+    st["scen_alarm"] = np.bincount(inv[(pred == 0) & (y == 1)], minlength=ns).astype(
+        np.int32,
+    )
     st["scen_err"] = np.bincount(inv[pred != y], minlength=ns).astype(np.int32)
     del inv
     # voltage (as vld_evaluation: consistency uses prob >= threshold and vm >= 0.5)
@@ -418,15 +447,28 @@ def group_statistics(
             st["vm_n_on"] = np.int64(np.count_nonzero(~off))
             st["vm_sq_on_sum"] = np.float64(np.sum((vm[~off] - vt[~off]) ** 2))
         k = min(n, n_sample)
-        pick = np.sort(rng.choice(n, size=k, replace=False)) if k else np.empty(0, np.int64)
+        pick = (
+            np.sort(rng.choice(n, size=k, replace=False))
+            if k
+            else np.empty(0, np.int64)
+        )
         st["smp_prob"] = prob[pick].astype(np.float32)
         st["smp_vm"] = vm[pick].astype(np.float32)
         st["smp_y"] = y[pick]
     return st
 
 
-_CONCAT = ("scen_id", "scen_tp", "scen_tn", "scen_missed", "scen_alarm", "scen_err",
-           "smp_prob", "smp_vm", "smp_y")
+_CONCAT = (
+    "scen_id",
+    "scen_tp",
+    "scen_tn",
+    "scen_missed",
+    "scen_alarm",
+    "scen_err",
+    "smp_prob",
+    "smp_vm",
+    "smp_y",
+)
 
 
 def combine(stats: Sequence[Dict[str, np.ndarray]]) -> Dict[str, np.ndarray]:
@@ -528,7 +570,10 @@ def _reliability(st) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float]:
     return xs, ys, ns, ece
 
 
-def metrics_from_statistics(st: Dict[str, np.ndarray], threshold: float) -> Dict[str, float]:
+def metrics_from_statistics(
+    st: Dict[str, np.ndarray],
+    threshold: float,
+) -> Dict[str, float]:
     """All metrics of ``vld_evaluation.evaluate_vld_predictions`` except the intervals."""
     nan = float("nan")
     n = int(st["n_rows"])
@@ -544,12 +589,22 @@ def metrics_from_statistics(st: Dict[str, np.ndarray], threshold: float) -> Dict
     m["mean_prob_label_on"] = float(st["sum_prob_on"]) / n_on if n_on else nan
     m["mean_prob_label_off"] = float(st["sum_prob_off"]) / n_off if n_off else nan
     m["off_rate"] = 1.0 - int(st["sum_y"]) / n
-    m.update({"TP_on": tp, "TN_off": tn, "FP_pred_on_true_off": fp, "FN_pred_off_true_on": fn})
+    m.update(
+        {
+            "TP_on": tp,
+            "TN_off": tn,
+            "FP_pred_on_true_off": fp,
+            "FN_pred_off_true_on": fn,
+        },
+    )
     m["brier"] = float(st["brier_sum"]) / n
     if n_on and n_off:
         m["roc_auc"] = _roc_auc(st["fine_on"], st["fine_off"])
         m["ap_deenergised"] = _average_precision(st["fine_off"], st["fine_on"])
-        m["ap_energised"] = _average_precision(st["fine_on"][::-1], st["fine_off"][::-1])
+        m["ap_energised"] = _average_precision(
+            st["fine_on"][::-1],
+            st["fine_off"][::-1],
+        )
     m["ece"] = _reliability(st)[3]
     missed, alarm, err = st["scen_missed"], st["scen_alarm"], st["scen_err"]
     m.update(
@@ -629,13 +684,22 @@ def plot_confusion_counts(tn, fp, fn, tp, threshold, path, subtitle=""):
         ax.imshow(cmn, cmap="Blues", vmin=0, vmax=1)
         for i in range(2):
             for j in range(2):
-                ax.text(j, i, f"{cm[i, j]:,}\n{cmn[i, j]:.1%}", ha="center", va="center",
-                        fontsize=7.5, color="white" if cmn[i, j] > 0.55 else "black")
+                ax.text(
+                    j,
+                    i,
+                    f"{cm[i, j]:,}\n{cmn[i, j]:.1%}",
+                    ha="center",
+                    va="center",
+                    fontsize=7.5,
+                    color="white" if cmn[i, j] > 0.55 else "black",
+                )
         ax.set_xticks([0, 1], ["de-energised", "energised"])
         ax.set_yticks([0, 1], ["de-energised", "energised"])
         ax.set_xlabel("predicted")
         ax.set_ylabel("true")
-        ax.set_title(f"Bus status (row-normalised), $\\theta$ = {threshold:.3f}{subtitle}")
+        ax.set_title(
+            f"Bus status (row-normalised), $\\theta$ = {threshold:.3f}{subtitle}",
+        )
         ax.grid(False)
         fig.savefig(path)
         plt.close(fig)
@@ -644,7 +708,11 @@ def plot_confusion_counts(tn, fp, fn, tp, threshold, path, subtitle=""):
 def plot_roc_pr_grouped(st, groups, metrics, path):
     plt = _plt()
     tn, fp, fn, tp = (int(st[k]) for k in ("tn", "fp", "fn", "tp"))
-    tpr_o, fpr_o, prec_o = tn / max(tn + fp, 1), fn / max(fn + tp, 1), tn / max(tn + fn, 1)
+    tpr_o, fpr_o, prec_o = (
+        tn / max(tn + fp, 1),
+        fn / max(fn + tp, 1),
+        tn / max(tn + fn, 1),
+    )
     prevalence = 1.0 - int(st["sum_y"]) / int(st["n_rows"])
     with plt.rc_context(_RC):
         fig, (a1, a2) = plt.subplots(1, 2, figsize=(6.4, 3.0))
@@ -656,19 +724,52 @@ def plot_roc_pr_grouped(st, groups, metrics, path):
             a1.plot(gx, gy, color=C_MUTED, lw=0.5, alpha=0.6, label=lab)
             a2.plot(gr, gp, color=C_MUTED, lw=0.5, alpha=0.6, label=lab)
         fx, fy, fp_, fr = _roc_pr_points(st["fine_on"], st["fine_off"])
-        a1.plot(fx, fy, color=C_OFF, lw=1.6, label=f"all groups, AUC = {metrics['roc_auc']:.3f}")
+        a1.plot(
+            fx,
+            fy,
+            color=C_OFF,
+            lw=1.6,
+            label=f"all groups, AUC = {metrics['roc_auc']:.3f}",
+        )
         a1.plot([0, 1], [0, 1], "--", color=C_MUTED, lw=0.8)
-        a1.plot(fpr_o, tpr_o, "o", color=C_MODEL, ms=5.5, mec="white", mew=0.7,
-                label="model operating point")
+        a1.plot(
+            fpr_o,
+            tpr_o,
+            "o",
+            color=C_MODEL,
+            ms=5.5,
+            mec="white",
+            mew=0.7,
+            label="model operating point",
+        )
         a1.set_xlabel("false positive rate (energised called off)")
         a1.set_ylabel("true positive rate (outage detected)")
         a1.set_title("ROC, de-energised as positive")
         a1.legend(loc="lower right")
-        a2.plot(fr, fp_, color=C_OFF, lw=1.6,
-                label=f"all groups, AP = {metrics['ap_deenergised']:.3f}")
-        a2.axhline(prevalence, ls="--", color=C_MUTED, lw=0.8, label=f"prevalence {prevalence:.2f}")
-        a2.plot(tpr_o, prec_o, "o", color=C_MODEL, ms=5.5, mec="white", mew=0.7,
-                label="model operating point")
+        a2.plot(
+            fr,
+            fp_,
+            color=C_OFF,
+            lw=1.6,
+            label=f"all groups, AP = {metrics['ap_deenergised']:.3f}",
+        )
+        a2.axhline(
+            prevalence,
+            ls="--",
+            color=C_MUTED,
+            lw=0.8,
+            label=f"prevalence {prevalence:.2f}",
+        )
+        a2.plot(
+            tpr_o,
+            prec_o,
+            "o",
+            color=C_MODEL,
+            ms=5.5,
+            mec="white",
+            mew=0.7,
+            label="model operating point",
+        )
         a2.set_xlabel("recall (outage detected)")
         a2.set_ylabel("precision")
         a2.set_title("Precision-recall, de-energised as positive")
@@ -682,11 +783,29 @@ def plot_probability_separation_counts(st, threshold, path):
     centres = SEP_EDGES[:-1]
     with plt.rc_context(_RC):
         fig, ax = plt.subplots(figsize=(4.4, 2.8))
-        ax.hist(centres, bins=SEP_EDGES, weights=st["sep_off"], color=C_OFF, alpha=0.75,
-                label="true de-energised")
-        ax.hist(centres, bins=SEP_EDGES, weights=st["sep_on"], color=C_ON, alpha=0.75,
-                label="true energised")
-        ax.axvline(threshold, color=C_MODEL, ls="--", lw=1.0, label=rf"$\theta$ = {threshold:.3f}")
+        ax.hist(
+            centres,
+            bins=SEP_EDGES,
+            weights=st["sep_off"],
+            color=C_OFF,
+            alpha=0.75,
+            label="true de-energised",
+        )
+        ax.hist(
+            centres,
+            bins=SEP_EDGES,
+            weights=st["sep_on"],
+            color=C_ON,
+            alpha=0.75,
+            label="true energised",
+        )
+        ax.axvline(
+            threshold,
+            color=C_MODEL,
+            ls="--",
+            lw=1.0,
+            label=rf"$\theta$ = {threshold:.3f}",
+        )
         ax.set_yscale("log")
         ax.set_xlabel("P(energised)")
         ax.set_ylabel("buses (log)")
@@ -730,12 +849,22 @@ def plot_scenario_errors_counts(st, path):
     vals = np.arange(mx + 1)
     with plt.rc_context(_RC):
         fig, (a1, a2) = plt.subplots(1, 2, figsize=(6.0, 2.6), sharey=True)
-        a1.hist(vals, bins=bins, weights=np.bincount(missed, minlength=mx + 1), color=C_OFF,
-                edgecolor="white")
+        a1.hist(
+            vals,
+            bins=bins,
+            weights=np.bincount(missed, minlength=mx + 1),
+            color=C_OFF,
+            edgecolor="white",
+        )
         a1.set_xlabel("missed outages per scenario")
         a1.set_ylabel("scenarios")
-        a2.hist(vals, bins=bins, weights=np.bincount(alarm, minlength=mx + 1), color=C_ON,
-                edgecolor="white")
+        a2.hist(
+            vals,
+            bins=bins,
+            weights=np.bincount(alarm, minlength=mx + 1),
+            color=C_ON,
+            edgecolor="white",
+        )
         a2.set_xlabel("false alarms per scenario")
         exact = float(np.mean(st["scen_err"] == 0))
         fig.suptitle(f"Per-scenario errors  (exact match {exact:.1%})", fontsize=9)
@@ -746,7 +875,11 @@ def plot_scenario_errors_counts(st, path):
 def _bus_rates(st):
     with np.errstate(divide="ignore", invalid="ignore"):
         on_n = st["bus_n"] - st["bus_off_n"]
-        off_rec = np.where(st["bus_off_n"] > 0, st["bus_off_hit"] / st["bus_off_n"], np.nan)
+        off_rec = np.where(
+            st["bus_off_n"] > 0,
+            st["bus_off_hit"] / st["bus_off_n"],
+            np.nan,
+        )
         on_rec = np.where(on_n > 0, st["bus_on_hit"] / on_n, np.nan)
         off_freq = np.where(st["bus_n"] > 0, st["bus_off_n"] / st["bus_n"], np.nan)
     return off_rec, on_rec, off_freq
@@ -769,11 +902,29 @@ def plot_per_bus_grouped(st, groups, bus_ids, path):
 
     with plt.rc_context(_RC):
         fig, ax = plt.subplots(figsize=(7.0, 2.6))
-        kw = dict(error_kw=dict(lw=0.5, capsize=0, ecolor="#555555")) if len(groups) > 1 else {}
-        ax.bar(x - w / 2, off_rec, w, color=C_OFF, label="off-recall (outage detected)",
-               yerr=err(off_rec, g_off) if len(groups) > 1 else None, **kw)
-        ax.bar(x + w / 2, on_rec, w, color=C_ON, label="on-recall (no false alarm)",
-               yerr=err(on_rec, g_on) if len(groups) > 1 else None, **kw)
+        kw = (
+            dict(error_kw=dict(lw=0.5, capsize=0, ecolor="#555555"))
+            if len(groups) > 1
+            else {}
+        )
+        ax.bar(
+            x - w / 2,
+            off_rec,
+            w,
+            color=C_OFF,
+            label="off-recall (outage detected)",
+            yerr=err(off_rec, g_off) if len(groups) > 1 else None,
+            **kw,
+        )
+        ax.bar(
+            x + w / 2,
+            on_rec,
+            w,
+            color=C_ON,
+            label="on-recall (no false alarm)",
+            yerr=err(on_rec, g_on) if len(groups) > 1 else None,
+            **kw,
+        )
         ax.plot(x, off_freq, "k.", ms=3, label="outage frequency of bus")
         ax.set_xticks(x)
         ax.set_xticklabels(bus_ids, fontsize=6, rotation=90)
@@ -794,18 +945,50 @@ def plot_voltage_status_sample(st, threshold, path):
     prob, vm, y = st["smp_prob"], st["smp_vm"], st["smp_y"]
     with plt.rc_context(_RC):
         fig, ax = plt.subplots(figsize=(3.8, 3.2))
-        for cls, col, lab in ((0, C_OFF, "true de-energised"), (1, C_ON, "true energised")):
+        for cls, col, lab in (
+            (0, C_OFF, "true de-energised"),
+            (1, C_ON, "true energised"),
+        ):
             m = y == cls
-            ax.scatter(prob[m], vm[m], s=3, alpha=0.35, color=col, label=lab, linewidths=0)
-        ax.axvline(threshold, color=C_MODEL, ls="--", lw=0.9, label=rf"$\theta$ = {threshold:.3f}")
+            ax.scatter(
+                prob[m],
+                vm[m],
+                s=3,
+                alpha=0.35,
+                color=col,
+                label=lab,
+                linewidths=0,
+            )
+        ax.axvline(
+            threshold,
+            color=C_MODEL,
+            ls="--",
+            lw=0.9,
+            label=rf"$\theta$ = {threshold:.3f}",
+        )
         ax.axhline(0.5, color=C_MUTED, ls=":", lw=0.8)
         ax.set_xlabel("P(energised)")
         ax.set_ylabel(r"predicted $\hat V$ (p.u.)")
         ax.set_title(f"Voltage-status consistency ({y.size:,} random buses)")
-        ax.text(0.02, 0.96, "status off\nvoltage on", transform=ax.transAxes, fontsize=6,
-                va="top", color=C_MUTED)
-        ax.text(0.98, 0.04, "status on\nvoltage off", transform=ax.transAxes, fontsize=6,
-                va="bottom", ha="right", color=C_MUTED)
+        ax.text(
+            0.02,
+            0.96,
+            "status off\nvoltage on",
+            transform=ax.transAxes,
+            fontsize=6,
+            va="top",
+            color=C_MUTED,
+        )
+        ax.text(
+            0.98,
+            0.04,
+            "status on\nvoltage off",
+            transform=ax.transAxes,
+            fontsize=6,
+            va="bottom",
+            ha="right",
+            color=C_MUTED,
+        )
         ax.legend(loc="center right", markerscale=3)
         fig.savefig(path)
         plt.close(fig)
@@ -835,14 +1018,23 @@ def plot_group_variation(group_rows, overall, path):
             v = np.array([r.get(k, np.nan) for r in group_rows], float)
             ax.plot(gi, v, "o", color=C_OFF, ms=3, label="group")
             ax.axhline(overall[k], color=C_MODEL, lw=0.9, label="all groups")
-            ax.axhline(np.nanmean(v), color=C_ON, lw=0.9, ls="--", label="mean of groups")
+            ax.axhline(
+                np.nanmean(v),
+                color=C_ON,
+                lw=0.9,
+                ls="--",
+                label="mean of groups",
+            )
             ax.set_title(t)
             ax.set_xlabel("group")
             ax.ticklabel_format(axis="y", useOffset=False)
-        for ax in list(axes.flat)[len(keys):]:
+        for ax in list(axes.flat)[len(keys) :]:
             ax.set_visible(False)
         axes.flat[0].legend(loc="best", fontsize=6)
-        fig.suptitle(f"Metrics per group of scenarios ({len(group_rows)} groups)", fontsize=9)
+        fig.suptitle(
+            f"Metrics per group of scenarios ({len(group_rows)} groups)",
+            fontsize=9,
+        )
         fig.savefig(path)
         plt.close(fig)
 
@@ -881,7 +1073,10 @@ def _write_summary(m, group_rows, info, path):
             "different thresholds.",
             "",
         ]
-    if info.get("threshold_min") is not None and info["threshold_min"] != info["threshold_max"]:
+    if (
+        info.get("threshold_min") is not None
+        and info["threshold_min"] != info["threshold_max"]
+    ):
         lines += [
             f"**Warning:** the `threshold` column is not constant "
             f"({info['threshold_min']:.6f} to {info['threshold_max']:.6f}); θ above is the first row's.",
@@ -905,7 +1100,11 @@ def _write_summary(m, group_rows, info, path):
             s += f"  [{m[f'{key}_ci95_lo']:.3f}, {m[f'{key}_ci95_hi']:.3f}]"
         v = np.array([r.get(key, np.nan) for r in group_rows], float)
         if np.isfinite(v).any():
-            sd = float(np.nanstd(v, ddof=1)) if np.isfinite(v).sum() > 1 else float("nan")
+            sd = (
+                float(np.nanstd(v, ddof=1))
+                if np.isfinite(v).sum() > 1
+                else float("nan")
+            )
             g1 = f"{np.nanmean(v):.4f} ± {sd:.4f}"
             g2 = f"{np.nanmin(v):.4f} – {np.nanmax(v):.4f}"
         else:
@@ -977,21 +1176,24 @@ def evaluate_vld_file_grouped(
     n_scen = info["n_scenarios"]
     n_groups = math.ceil(n_scen / group_size)
     if model_threshold is None:
-        model_threshold = info["threshold_first"] if info["threshold_first"] is not None else 0.5
+        model_threshold = (
+            info["threshold_first"] if info["threshold_first"] is not None else 0.5
+        )
     model_threshold = float(model_threshold)
     grouping = (
-        "scenarios in file order" if info["contiguous"]
+        "scenarios in file order"
+        if info["contiguous"]
         else "scenario ids in sorted order; one pass over the file per group"
     )
     _log(
         f"{info['n_rows']:,} rows, {n_scen:,} scenarios, {info['bus_ids'].size} buses, "
         f"threshold {model_threshold:.6f}; {n_groups} groups of up to {group_size:,} scenarios "
-        f"({grouping})"
+        f"({grouping})",
     )
     if not info["contiguous"]:
         _log(
             "WARNING: the rows of some scenarios are not stored together, so each group needs "
-            f"its own pass over the file ({n_groups} passes). This is slower but gives the same result."
+            f"its own pass over the file ({n_groups} passes). This is slower but gives the same result.",
         )
 
     manifest = {
@@ -1019,7 +1221,7 @@ def evaluate_vld_file_grouped(
         elif resume:
             raise RuntimeError(
                 f"{gdir} holds groups of a different run (file, group size, threshold or seed "
-                "changed). Use a new --outdir or --no-resume to recompute."
+                "changed). Use a new --outdir or --no-resume to recompute.",
             )
     if not resume or not done:
         for f in glob.glob(os.path.join(gdir, "group_*.npz")):
@@ -1033,26 +1235,47 @@ def evaluate_vld_file_grouped(
     skip = set(range(n_groups)) - todo
     if todo:
         if info["contiguous"]:
-            it = _iter_groups_contiguous(path, cols, group_size, n_groups, batch_rows,
-                                         use_threads, skip, last_group)
+            it = _iter_groups_contiguous(
+                path,
+                cols,
+                group_size,
+                n_groups,
+                batch_rows,
+                use_threads,
+                skip,
+                last_group,
+            )
         else:
             hi_ids = info["scenario_ids"][
                 np.minimum(np.arange(1, n_groups + 1) * group_size, n_scen) - 1
             ]
-            it = _iter_groups_by_id(path, cols, hi_ids, batch_rows, use_threads, skip, last_group)
+            it = _iter_groups_by_id(
+                path,
+                cols,
+                hi_ids,
+                batch_rows,
+                use_threads,
+                skip,
+                last_group,
+            )
         for k, d in it:
             tg = time.time()
             n_rows_k = d["scenario"].size
             n_sample = math.ceil(SCATTER_POINTS * n_rows_k / info["n_rows"])
-            st = group_statistics(d, model_threshold, info["bus_ids"], n_sample,
-                                  np.random.default_rng([seed, k]))
+            st = group_statistics(
+                d,
+                model_threshold,
+                info["bus_ids"],
+                n_sample,
+                np.random.default_rng([seed, k]),
+            )
             del d
             tmp = gfile(k)[:-4] + ".tmp.npz"
             np.savez(tmp, **st)
             os.replace(tmp, gfile(k))
             _log(
                 f"group {k + 1}/{n_groups}: {st['scen_id'].size:,} scenarios, {n_rows_k:,} rows, "
-                f"{time.time() - tg:.0f} s, peak memory {_peak_rss_gb():.2f} GB"
+                f"{time.time() - tg:.0f} s, peak memory {_peak_rss_gb():.2f} GB",
             )
     groups = []
     for k in range(last_group):
@@ -1062,8 +1285,12 @@ def evaluate_vld_file_grouped(
     n_unique = np.unique(st["scen_id"]).size
     if n_unique != st["scen_id"].size:
         raise RuntimeError("a scenario was split over two groups; please report this")
-    if last_group == n_groups and (int(st["n_rows"]) != info["n_rows"] or n_unique != n_scen):
-        raise RuntimeError("row or scenario count of the groups does not match the scan")
+    if last_group == n_groups and (
+        int(st["n_rows"]) != info["n_rows"] or n_unique != n_scen
+    ):
+        raise RuntimeError(
+            "row or scenario count of the groups does not match the scan",
+        )
 
     _log("combining groups and computing the bootstrap intervals")
     metrics = metrics_from_statistics(st, model_threshold)
@@ -1072,8 +1299,11 @@ def evaluate_vld_file_grouped(
         metrics[f"{k}_ci95_hi"] = hi
     group_rows = []
     for k, g in enumerate(groups):
-        r = {"group": k, "first_scenario": int(g["scen_id"].min()),
-             "last_scenario": int(g["scen_id"].max())}
+        r = {
+            "group": k,
+            "first_scenario": int(g["scen_id"].min()),
+            "last_scenario": int(g["scen_id"].max()),
+        }
         r.update(metrics_from_statistics(g, model_threshold))
         group_rows.append(r)
     for key in [k for k, _ in SUMMARY_ROWS] + ["mcc"]:
@@ -1083,12 +1313,22 @@ def evaluate_vld_file_grouped(
             metrics[f"{key}_group_min"] = float(np.nanmin(v))
             metrics[f"{key}_group_max"] = float(np.nanmax(v))
     metrics.update(
-        {"n_groups": n_groups, "groups_evaluated": last_group, "group_size": group_size},
+        {
+            "n_groups": n_groups,
+            "groups_evaluated": last_group,
+            "group_size": group_size,
+        },
     )
 
     f = lambda name: os.path.join(out_dir, f"{prefix}{name}.{fig_format}")  # noqa: E731
-    plot_confusion_counts(int(st["tn"]), int(st["fp"]), int(st["fn"]), int(st["tp"]),
-                          model_threshold, f("confusion_matrix"))
+    plot_confusion_counts(
+        int(st["tn"]),
+        int(st["fp"]),
+        int(st["fn"]),
+        int(st["tp"]),
+        model_threshold,
+        f("confusion_matrix"),
+    )
     if "roc_auc" in metrics:
         plot_roc_pr_grouped(st, groups, metrics, f("roc_pr"))
     plot_probability_separation_counts(st, model_threshold, f("probability_separation"))
@@ -1101,16 +1341,27 @@ def evaluate_vld_file_grouped(
 
     import pandas as pd
 
-    pd.DataFrame(group_rows).to_csv(os.path.join(out_dir, f"{prefix}group_metrics.csv"),
-                                    index=False)
+    pd.DataFrame(group_rows).to_csv(
+        os.path.join(out_dir, f"{prefix}group_metrics.csv"),
+        index=False,
+    )
     metrics = _jsonable(metrics)
-    with open(os.path.join(out_dir, f"{prefix}metrics.json"), "w", encoding="utf-8") as fh:
+    with open(
+        os.path.join(out_dir, f"{prefix}metrics.json"),
+        "w",
+        encoding="utf-8",
+    ) as fh:
         json.dump(metrics, fh, indent=2)
     _write_summary(
         metrics,
         group_rows,
-        {**manifest, "groups_evaluated": last_group, "grouping": grouping,
-         "threshold_min": info["threshold_min"], "threshold_max": info["threshold_max"]},
+        {
+            **manifest,
+            "groups_evaluated": last_group,
+            "grouping": grouping,
+            "threshold_min": info["threshold_min"],
+            "threshold_max": info["threshold_max"],
+        },
         os.path.join(out_dir, f"{prefix}summary.md"),
     )
     _log(f"done in {time.time() - t0:.0f} s; results in {out_dir}")
@@ -1126,20 +1377,43 @@ def main(argv=None):
     )
     ap.add_argument("predictions", help="parquet or csv written by the VLD task")
     ap.add_argument("--outdir", default="vld_eval_grouped")
-    ap.add_argument("--group-size", type=int, default=100_000,
-                    help="scenarios per group (default 100000)")
-    ap.add_argument("--threshold", type=float, default=None, help="override the threshold column")
+    ap.add_argument(
+        "--group-size",
+        type=int,
+        default=100_000,
+        help="scenarios per group (default 100000)",
+    )
+    ap.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="override the threshold column",
+    )
     ap.add_argument("--n-boot", type=int, default=1000)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--batch-rows", type=int, default=1_000_000,
-                    help="rows read from the file at a time (default 1000000)")
-    ap.add_argument("--max-groups", type=int, default=None,
-                    help="evaluate only the first N groups (trial run)")
-    ap.add_argument("--no-resume", action="store_true",
-                    help="recompute every group even if saved groups exist in OUTDIR/groups")
+    ap.add_argument(
+        "--batch-rows",
+        type=int,
+        default=1_000_000,
+        help="rows read from the file at a time (default 1000000)",
+    )
+    ap.add_argument(
+        "--max-groups",
+        type=int,
+        default=None,
+        help="evaluate only the first N groups (trial run)",
+    )
+    ap.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="recompute every group even if saved groups exist in OUTDIR/groups",
+    )
     ap.add_argument("--fig-format", default="png")
-    ap.add_argument("--threads", action="store_true",
-                    help="let pyarrow decode with several threads (off by default for HPC login nodes)")
+    ap.add_argument(
+        "--threads",
+        action="store_true",
+        help="let pyarrow decode with several threads (off by default for HPC login nodes)",
+    )
     args = ap.parse_args(argv)
     m = evaluate_vld_file_grouped(
         args.predictions,
