@@ -4,7 +4,9 @@ data:
   networks: ["scenario_33radial"]   # Networks loaded as separate folders
   scenarios: [57155]                # Number of scenarios loaded from the CSV files
   normalization: "HeteroDataMVANormalizer"  # data normalization to pu on MVA base
-  baseMVA: 100                      # Base MVA for normalization
+  baseMVA: [100.0]                  # MVA base of each network, one per network in the order of networks:
+                                    # the base_mva of its network_info.txt (checked before normalisation)
+  check_base_mva: true              # stop if a base differs from network_info.txt (false: legacy checkpoints only)
   mask_value: 0.0                   # Initial value for masked parameters
   val_ratio: 0.1                    # ratio of data for validation
   test_ratio: 0.1                   # ratio of data for testing
@@ -47,7 +49,7 @@ training:
     - # ---- PBE (Phase 1.2) -------------------------------------------------
       slack_power: label           # slack P/Q from the label (VLD default); gen_rows = legacy
       merge_switches: true         # balance on electrical nodes (VLD default)
-      bus_scope: all               # or energised (see docs: vld_phase1_fixes.md, 1.2c)
+      bus_scope: energised         # energised buses only (VLD default; see vld_phase1_fixes.md, 1.2c)
       normalisation: load          # per-scenario |S_load| scaling; default none
     - # ---- VLDTopologyLoss -------------------------------------------------
       # Status-logit terms, eq. (18). The topology term (BFS reachability) is

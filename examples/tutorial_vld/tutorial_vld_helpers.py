@@ -155,6 +155,23 @@ def count_scenarios(data_dir: Path, network: str) -> int:
     return int(bus["scenario"].nunique())
 
 
+def network_base_mva(data_dir: Path, network: str) -> float:
+    """MVA base (``base_mva``) of a generated network, from its network_info.txt."""
+    from gridfm_app_dist.datasets.network_info import (
+        info_base_mva,
+        network_info_path,
+        read_network_info,
+    )
+
+    path = network_info_path(str(data_dir), network)
+    if path is None:
+        raise FileNotFoundError(f"no network_info.txt for {network} under {data_dir}")
+    base = info_base_mva(read_network_info(path))
+    if base is None:
+        raise ValueError(f"{path} has no base_mva entry")
+    return base
+
+
 def adapt_pretrained(
     pretrained_dir: Path,
     network: str,
@@ -174,14 +191,6 @@ def adapt_pretrained(
     """
     pretrained_dir, out_dir = Path(pretrained_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    cfg = read_yaml(pretrained_dir / "config.yaml")
-    cfg["data"]["networks"] = [network]
-    cfg["data"]["scenarios"] = [n_scenarios]
-    cfg["data"]["workers"] = 0
-    cfg["training"]["accelerator"] = accelerator
-    cfg["training"]["devices"] = 1
-    cfg["training"]["strategy"] = "auto"
-    config_path = write_yaml(out_dir / "config.yaml", cfg)
 
     source = Path(stats_from) if stats_from else pretrained_dir / "normalizer_stats.pt"
     stats = torch.load(source, map_location="cpu", weights_only=False)
@@ -195,6 +204,18 @@ def adapt_pretrained(
     stats = {network: stats[network]}
     stats_path = out_dir / "normalizer_stats.pt"
     torch.save(stats, stats_path)
+
+    cfg = read_yaml(pretrained_dir / "config.yaml")
+    cfg["data"]["networks"] = [network]
+    cfg["data"]["scenarios"] = [n_scenarios]
+    # The network's own MVA base, as recorded in the stats (they were fitted with
+    # it); the run checks it against the network's network_info.txt.
+    cfg["data"]["baseMVA"] = [float(stats[network]["baseMVA_orig"])]
+    cfg["data"]["workers"] = 0
+    cfg["training"]["accelerator"] = accelerator
+    cfg["training"]["devices"] = 1
+    cfg["training"]["strategy"] = "auto"
+    config_path = write_yaml(out_dir / "config.yaml", cfg)
     return config_path, stats_path, pretrained_dir / "best_model_state_dict.pt"
 
 

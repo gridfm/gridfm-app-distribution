@@ -137,7 +137,9 @@ class MaskedMSELoss(BaseLoss):
     def __init__(self, loss_args, args):
         super(MaskedMSELoss, self).__init__()
         self.reduction = "mean"
-        channels = getattr(loss_args, "channels", None) if loss_args is not None else None
+        channels = (
+            getattr(loss_args, "channels", None) if loss_args is not None else None
+        )
         if channels is None:
             channels = self.VLD_DEFAULT_CHANNELS if _is_vld(args) else self.ALL_CHANNELS
         if isinstance(channels, str):
@@ -149,7 +151,9 @@ class MaskedMSELoss(BaseLoss):
                 f"{list(self.ALL_CHANNELS)}, got {channels!r}.",
             )
         self.channels = tuple(c for c in self.ALL_CHANNELS if c in channels)
-        self.bus_cols = tuple(self.BUS_CHANNELS[c] for c in self.channels if c in self.BUS_CHANNELS)
+        self.bus_cols = tuple(
+            self.BUS_CHANNELS[c] for c in self.channels if c in self.BUS_CHANNELS
+        )
         self.use_gen_pg = "gen_Pg" in self.channels
 
     def forward(
@@ -918,7 +922,9 @@ class PBELoss(BaseLoss):
         ``energised`` averages over energised nodes only (label
         ``BUS_STATUS_TARGET``). De-energised buses keep their in-service load
         in the labels, so with ``all`` they add an irreducible floor equal to
-        their unsupplied load. Default: ``all`` (see the docs for the trade-off).
+        their unsupplied load, and away from V = 0 a pull unrelated to the VLD
+        off-Vm term; they add no information. Default: ``energised`` for VLD,
+        ``all`` otherwise.
     ``normalisation``: ``none`` | ``load``
         ``load`` divides each node's residual by the mean load magnitude
         ``|Pd + jQd|`` over the loaded buses of its own graph (scenario), so the
@@ -951,12 +957,14 @@ class PBELoss(BaseLoss):
         vld = _is_vld(args)
 
         def opt(name, default):
-            return getattr(loss_args, name, default) if loss_args is not None else default
+            return (
+                getattr(loss_args, name, default) if loss_args is not None else default
+            )
 
         self.slack_power = opt("slack_power", "label" if vld else "gen_rows")
         self.merge_switches = bool(opt("merge_switches", vld))
         self.switch_tol = float(opt("switch_tol", 0.0))
-        self.bus_scope = opt("bus_scope", "all")
+        self.bus_scope = opt("bus_scope", "energised" if vld else "all")
         self.normalisation = opt("normalisation", "none")
         self.include_shunts = bool(opt("include_shunts", True))
         for name, value, allowed in (
@@ -1116,7 +1124,6 @@ class PBELoss(BaseLoss):
             )
         return result
 
-
     # ------------------------------------------------------------------
     # New path (plan item 1.2): electrical nodes, slack power from the label,
     # optional energised scope and per-graph load normalisation.
@@ -1138,17 +1145,25 @@ class PBELoss(BaseLoss):
             g_d = g_d + gs
         if bs is not None:
             b_d = b_d + bs
-        i_re = g_d * vr - b_d * vi + scatter_add(
-            g_ft * vr[dst] - b_ft * vi[dst],
-            src,
-            dim=0,
-            dim_size=num_bus,
+        i_re = (
+            g_d * vr
+            - b_d * vi
+            + scatter_add(
+                g_ft * vr[dst] - b_ft * vi[dst],
+                src,
+                dim=0,
+                dim_size=num_bus,
+            )
         )
-        i_im = g_d * vi + b_d * vr + scatter_add(
-            g_ft * vi[dst] + b_ft * vr[dst],
-            src,
-            dim=0,
-            dim_size=num_bus,
+        i_im = (
+            g_d * vi
+            + b_d * vr
+            + scatter_add(
+                g_ft * vi[dst] + b_ft * vr[dst],
+                src,
+                dim=0,
+                dim_size=num_bus,
+            )
         )
         p_inj = vr * i_re + vi * i_im
         q_inj = vi * i_re - vr * i_im
@@ -1171,7 +1186,13 @@ class PBELoss(BaseLoss):
         src = torch.cat([a, b])
         dst = torch.cat([b, a])
         for _ in range(num_bus):
-            new = label.scatter_reduce(0, dst, label[src], reduce="amin", include_self=True)
+            new = label.scatter_reduce(
+                0,
+                dst,
+                label[src],
+                reduce="amin",
+                include_self=True,
+            )
             new = new[new]
             if torch.equal(new, label):
                 break
@@ -1245,7 +1266,11 @@ class PBELoss(BaseLoss):
             > 0
         )
         if pred_bus.size(1) > QG_OUT:
-            Qg = torch.where(mask_bus[:, QG_H], pred_bus[:, QG_OUT], target_bus[:, QG_H])
+            Qg = torch.where(
+                mask_bus[:, QG_H],
+                pred_bus[:, QG_OUT],
+                target_bus[:, QG_H],
+            )
         else:
             Qg = target_bus[:, QG_H]
 
@@ -1274,8 +1299,16 @@ class PBELoss(BaseLoss):
 
         # Same guard as the legacy path: only outputs with >= 6 columns carry PD/QD.
         if pred_bus.size(1) > BUS_STATUS_TARGET:
-            Pd = torch.where(mask_bus[:, PD_H], pred_bus[:, PD_OUT], target_bus[:, PD_H])
-            Qd = torch.where(mask_bus[:, QD_H], pred_bus[:, QD_OUT], target_bus[:, QD_H])
+            Pd = torch.where(
+                mask_bus[:, PD_H],
+                pred_bus[:, PD_OUT],
+                target_bus[:, PD_H],
+            )
+            Qd = torch.where(
+                mask_bus[:, QD_H],
+                pred_bus[:, QD_OUT],
+                target_bus[:, QD_H],
+            )
         else:
             Pd = target_bus[:, PD_H]
             Qd = target_bus[:, QD_H]
@@ -1314,9 +1347,9 @@ class PBELoss(BaseLoss):
                     f"BUS_STATUS_TARGET (column {BUS_STATUS_TARGET}).",
                 )
             on_bus = (target_bus[:, BUS_STATUS_TARGET] > 0.5).to(mag.dtype)
-            in_scope = (
-                scatter_add(on_bus, node, dim=0, dim_size=num_nodes) > 0
-            ).to(mag.dtype)
+            in_scope = (scatter_add(on_bus, node, dim=0, dim_size=num_nodes) > 0).to(
+                mag.dtype,
+            )
         else:
             in_scope = torch.ones_like(mag)
         n_scope = in_scope.sum().clamp_min(1.0)
@@ -1331,8 +1364,12 @@ class PBELoss(BaseLoss):
         result = {
             "loss": loss,
             "Power loss in p.u.": ((mag * in_scope).sum() / n_scope).detach(),
-            "Active Power Loss in p.u.": ((dP_n.abs() * in_scope).sum() / n_scope).detach(),
-            "Reactive Power Loss in p.u.": ((dQ_n.abs() * in_scope).sum() / n_scope).detach(),
+            "Active Power Loss in p.u.": (
+                (dP_n.abs() * in_scope).sum() / n_scope
+            ).detach(),
+            "Reactive Power Loss in p.u.": (
+                (dQ_n.abs() * in_scope).sum() / n_scope
+            ).detach(),
         }
         if self.normalisation == "load":
             result["Power loss (load-normalised)"] = loss.detach()
@@ -1366,11 +1403,17 @@ class PBELoss(BaseLoss):
             batch = torch.zeros(num_bus, dtype=torch.long, device=device)
         batch = batch.to(device=device, dtype=torch.long)
         num_graphs = int(batch.max().item()) + 1 if num_bus > 0 else 1
-        s_load = torch.sqrt(target_bus[:, PD_H] ** 2 + target_bus[:, QD_H] ** 2).to(dtype)
+        s_load = torch.sqrt(target_bus[:, PD_H] ** 2 + target_bus[:, QD_H] ** 2).to(
+            dtype,
+        )
         loaded = (s_load > 0).to(dtype)
         total = scatter_add(s_load, batch, dim=0, dim_size=num_graphs)
         count = scatter_add(loaded, batch, dim=0, dim_size=num_graphs)
-        scale = torch.where(count > 0, total / count.clamp_min(1.0), torch.ones_like(total))
+        scale = torch.where(
+            count > 0,
+            total / count.clamp_min(1.0),
+            torch.ones_like(total),
+        )
         node_graph = torch.zeros(num_nodes, dtype=torch.long, device=device)
         node_graph.scatter_(0, node, batch)
         return 1.0 / scale[node_graph]

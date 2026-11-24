@@ -177,8 +177,9 @@ class is blind to false de-energisations). Six runs cover the grid.
 PBE compares the injection implied by $\hat V$ with the dataset's $P_d, Q_d$. The
 data keeps the in-service load on de-energised buses, so on those buses PBE has an
 irreducible floor (the unsupplied load) and, away from $\hat V = 0$, pulls the island
-voltages in directions unrelated to $\mathcal{L}_{\text{off}}$. Set
-`bus_scope: energised` in the PBE `loss_args` to restrict it to energised buses.
+voltages in directions unrelated to $\mathcal{L}_{\text{off}}$. For VLD, PBE is
+therefore restricted to energised buses by default (`bus_scope: energised`; `all`
+restores the old behaviour).
 
 The PBE and MaskedMSE options added in Phase 1 are:
 

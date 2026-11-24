@@ -1,4 +1,8 @@
 from gridfm_app_dist.io.registries import NORMALIZERS_REGISTRY
+from gridfm_app_dist.datasets.network_info import (
+    base_mva_matches,
+    single_network_base_mva,
+)
 import os
 import torch
 from abc import ABC, abstractmethod
@@ -41,6 +45,32 @@ from gridfm_app_dist.datasets.globals import (
     ANG_MAX,
     RATE_A,
 )
+
+
+def _initial_base_mva(args, base_mva):
+    """MVA base of the network a normaliser serves (``baseMVA_orig``).
+
+    The datamodule passes each network's own ``data.baseMVA`` entry. Without it,
+    a single-network config gives its one value; otherwise the base stays None
+    until it is set (e.g. from ``data.baseMVA_orig`` of a normalised sample).
+    """
+    if base_mva is not None:
+        return float(base_mva)
+    return single_network_base_mva(args)
+
+
+def _restore_base_mva(configured, saved, network_hint=""):
+    """Base to use after restoring saved stats; they must match the configured one."""
+    saved = float(saved.item() if hasattr(saved, "item") else saved)
+    if configured is not None and not base_mva_matches(configured, saved):
+        raise ValueError(
+            f"Saved normaliser statistics{network_hint} were computed with MVA base "
+            f"{saved:g}, but the configured base (data.baseMVA) of this network is "
+            f"{configured:g}. A model trained with those statistics expects base "
+            f"{saved:g}: use the config of that training run, or retrain. (Statistics "
+            "from runs before the per-network baseMVA carry the old common base 100.)",
+        )
+    return saved
 
 
 class Normalizer(ABC):
@@ -117,15 +147,20 @@ class HeteroDataMVANormalizer(Normalizer):
 
     fit_strategy = "fit_on_train"
 
-    def __init__(self, args):
+    def __init__(self, args, base_mva=None):
         """
         Args:
             args (NestedNamespace): Parameters
+            base_mva (float, optional): MVA base of THIS network (its ``sn_mva``,
+                the ``data.baseMVA`` entry of the network). The datamodule passes
+                it; for a single-network config it defaults to that config value.
 
         Attributes:
-            baseMVA (float): baseMVA found in casefile. From ``args.data.baseMVA``.
+            baseMVA_orig (float): MVA base in which the admittances and shunts of
+                the network's data are expressed (per network, not global).
+            baseMVA (float): fitted power base (95th percentile of the loads).
         """
-        self.baseMVA_orig = getattr(args.data, "baseMVA", 100)
+        self.baseMVA_orig = _initial_base_mva(args, base_mva)
         self.baseMVA = None
 
     def to(self, device):
@@ -189,9 +224,12 @@ class HeteroDataMVANormalizer(Normalizer):
         }
 
     def fit_from_dict(self, params: dict):
-        # Base MVA
+        # Base MVA. The saved base of the network must equal the configured one.
         self.baseMVA = params.get("baseMVA").item()
-        self.baseMVA_orig = params.get("baseMVA_orig").item()
+        self.baseMVA_orig = _restore_base_mva(
+            self.baseMVA_orig,
+            params.get("baseMVA_orig"),
+        )
 
         # vn_kv
         self.vn_kv_max = params.get("vn_kv_max").item()
@@ -199,6 +237,10 @@ class HeteroDataMVANormalizer(Normalizer):
     def transform(self, data: HeteroData):
         if self.baseMVA is None or self.baseMVA == 0:
             raise ValueError("BaseMVA not properly set")
+        if self.baseMVA_orig is None:
+            raise ValueError(
+                "The MVA base of the network (data.baseMVA) is not set on this normaliser.",
+            )
 
         # --- Bus input normalization --- PD, QD, QG, MIN_QG, MAX_QG, VA, GS, BS, VN_KV (9)
         data.x_dict["bus"][:, PD_H] /= self.baseMVA
@@ -248,6 +290,12 @@ class HeteroDataMVANormalizer(Normalizer):
             self.baseMVA,
             dtype=data.x_dict["bus"].dtype,
         )  # # needs to be float32 for MPS
+        # The network's own MVA base, so transforms that re-normalise grid data
+        # (LoadGridParamsFromPath*) use the right one for this sample.
+        data.baseMVA_orig = torch.tensor(
+            self.baseMVA_orig,
+            dtype=data.x_dict["bus"].dtype,
+        )
         data.is_normalized = torch.tensor(
             True,
             dtype=torch.bool,
@@ -360,12 +408,9 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
 
     fit_strategy = "fit_on_dataset"
 
-    def __init__(self, args):
-        self.baseMVA_orig = getattr(
-            args.data,
-            "baseMVA",
-            100,
-        )  # casefile base MVA (for GS/BS scaling)
+    def __init__(self, args, base_mva=None):
+        # MVA base of THIS network (data.baseMVA entry), for the Y and GS/BS scaling
+        self.baseMVA_orig = _initial_base_mva(args, base_mva)
         self._baseMVA_lookup = None  # tensor indexed by scenario_id
         self._vn_kv_max_lookup = None
         self._scenario_ids = None  # scenario ids that were fitted (for save/load)
@@ -456,8 +501,10 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         self._baseMVA_lookup[scenarios] = baseMVA
         self._vn_kv_max_lookup[scenarios] = vn_kv_max
         self._scenario_ids = scenarios
-        bmo = params.get("baseMVA_orig")
-        self.baseMVA_orig = bmo.item() if hasattr(bmo, "item") else bmo
+        self.baseMVA_orig = _restore_base_mva(
+            self.baseMVA_orig,
+            params.get("baseMVA_orig"),
+        )
 
     def _per_node_mva(self, data: HeteroData):
         """
@@ -467,6 +514,10 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         """
         if self._baseMVA_lookup is None:
             raise ValueError("Normalizer not fitted or lookups not built")
+        if self.baseMVA_orig is None:
+            raise ValueError(
+                "The MVA base of the network (data.baseMVA) is not set on this normaliser.",
+            )
 
         device = data.x_dict["bus"].device
         dtype = data.x_dict["bus"].dtype

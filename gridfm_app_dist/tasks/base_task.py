@@ -82,12 +82,17 @@ class BaseTask(L.LightningModule, ABC):
         grads = [p.grad for p in self.parameters() if p.grad is not None]
         if grads:
             grad_norm = torch.linalg.vector_norm(
-                torch.stack([torch.linalg.vector_norm(g.detach().float()) for g in grads]),
+                torch.stack(
+                    [torch.linalg.vector_norm(g.detach().float()) for g in grads],
+                ),
             )
         else:
             grad_norm = torch.zeros((), device=self.device)
         bad = torch.tensor(
-            float(getattr(self, "_nonfinite_loss", False) or not torch.isfinite(grad_norm)),
+            float(
+                getattr(self, "_nonfinite_loss", False)
+                or not torch.isfinite(grad_norm),
+            ),
             device=grad_norm.device,
         )
         trainer = getattr(self, "_trainer", None)

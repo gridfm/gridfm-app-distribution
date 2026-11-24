@@ -190,11 +190,14 @@ def _pbe(**opts):
 # ------------------------------------------------------------------ 1.2 PBE
 def test_pbe_defaults_legacy_for_other_tasks_and_new_for_vld():
     assert PBELoss().legacy
-    assert PBELoss(NestedNamespace(), NestedNamespace(task={"task_name": "PowerFlow"})).legacy
+    assert PBELoss(
+        NestedNamespace(),
+        NestedNamespace(task={"task_name": "PowerFlow"}),
+    ).legacy
     vld = PBELoss(NestedNamespace(), _vld_args())
     assert not vld.legacy
     assert vld.slack_power == "label" and vld.merge_switches
-    assert vld.bus_scope == "all" and vld.normalisation == "none"
+    assert vld.bus_scope == "energised" and vld.normalisation == "none"
     with pytest.raises(ValueError):
         _pbe(slack_power="decoder")
     with pytest.raises(ValueError):
@@ -252,7 +255,11 @@ def test_switch_merge_balances_the_electrical_node():
         _perfect_pred(g),
     )
     # 4 electrical nodes {0}, {1,2}, {3}, {4}; only the off-load floor remains
-    assert math.isclose(float(out["Power loss in p.u."]), abs(OFF_LOAD) / 4, rel_tol=1e-5)
+    assert math.isclose(
+        float(out["Power loss in p.u."]),
+        abs(OFF_LOAD) / 4,
+        rel_tol=1e-5,
+    )
 
 
 def test_energised_scope_is_zero_at_the_truth_and_gradients_are_finite():
@@ -286,10 +293,13 @@ def _two_graph_batch(scale):
         "ei": torch.cat([a["ei"], b["ei"] + off], dim=1),
         "ea": torch.cat([a["ea"], b["ea"]]),
         "mask": {
-            k: torch.cat([a["mask"][k], b["mask"][k]]) for k in ("bus", "gen", "REF", "PV")
+            k: torch.cat([a["mask"][k], b["mask"][k]])
+            for k in ("bus", "gen", "REF", "PV")
         },
     }
-    return g, torch.cat([torch.zeros(N, dtype=torch.long), torch.ones(N, dtype=torch.long)])
+    return g, torch.cat(
+        [torch.zeros(N, dtype=torch.long), torch.ones(N, dtype=torch.long)],
+    )
 
 
 def _call2(loss, g, pred, bus_batch):
@@ -352,7 +362,9 @@ def test_shunts_enter_the_new_path():
     g["x"][3, BS] = -0.02
     opts = dict(slack_power="label", merge_switches=True, bus_scope="energised")
     with_sh = float(_call(_pbe(**opts), g, _perfect_pred(g))["loss"])
-    without = float(_call(_pbe(include_shunts=False, **opts), g, _perfect_pred(g))["loss"])
+    without = float(
+        _call(_pbe(include_shunts=False, **opts), g, _perfect_pred(g))["loss"],
+    )
     assert without < 1e-5 < with_sh
 
 
@@ -434,10 +446,18 @@ def test_task_transforms_pass_the_flags():
     from gridfm_app_dist.datasets.task_transforms import VoltageLossDetectionTransforms
 
     args = NestedNamespace(
-        task={"task_name": "VoltageLossDetection", "ref_vm_input": True, "mask_pv_vm": True},
+        task={
+            "task_name": "VoltageLossDetection",
+            "ref_vm_input": True,
+            "mask_pv_vm": True,
+        },
         data={"mask_value": 0.0},
     )
-    masks = [t for t in VoltageLossDetectionTransforms(args).transforms if isinstance(t, AddVLDHeteroMask)]
+    masks = [
+        t
+        for t in VoltageLossDetectionTransforms(args).transforms
+        if isinstance(t, AddVLDHeteroMask)
+    ]
     assert len(masks) == 1 and masks[0].ref_vm_input and masks[0].mask_pv_vm
 
 
@@ -547,7 +567,11 @@ def test_non_finite_gradient_is_skipped_and_streak_stops_training():
 def test_non_finite_state_dicts_are_detected():
     from gridfm_app_dist.training.callbacks import non_finite_tensors
 
-    sd = {"a": torch.ones(2), "b": torch.tensor([1.0, float("nan")]), "c": torch.tensor([1])}
+    sd = {
+        "a": torch.ones(2),
+        "b": torch.tensor([1.0, float("nan")]),
+        "c": torch.tensor([1]),
+    }
     assert non_finite_tensors(sd) == ["b"]
 
 
@@ -582,11 +606,17 @@ def test_gradient_clipping_kwargs():
         "gradient_clip_val": 1.0,
         "gradient_clip_algorithm": "norm",
     }
-    off = NestedNamespace(training={"gradient_clip_val": None}, task={"task_name": "VoltageLossDetection"})
+    off = NestedNamespace(
+        training={"gradient_clip_val": None},
+        task={"task_name": "VoltageLossDetection"},
+    )
     assert gradient_clipping_kwargs(off) == {}
     pf = NestedNamespace(training={}, task={"task_name": "PowerFlow"})
     assert gradient_clipping_kwargs(pf) == {}
-    bad = NestedNamespace(training={"gradient_clip_algorithm": "x"}, task={"task_name": "VoltageLossDetection"})
+    bad = NestedNamespace(
+        training={"gradient_clip_algorithm": "x"},
+        task={"task_name": "VoltageLossDetection"},
+    )
     with pytest.raises(ValueError):
         gradient_clipping_kwargs(bad)
 
@@ -609,7 +639,10 @@ def test_prediction_tag_and_metadata(tmp_path):
     tag, path = prediction_tag(args)
     assert tag == "urban_LV_0.8w_500ep" and path == str(ckpt)
 
-    assert prediction_tag(SimpleNamespace(command="train"), ("/x/best.pt", 7, 0.9, "m")) == (
+    assert prediction_tag(
+        SimpleNamespace(command="train"),
+        ("/x/best.pt", 7, 0.9, "m"),
+    ) == (
         "best",
         "/x/best.pt",
     )

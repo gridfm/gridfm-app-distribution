@@ -396,7 +396,9 @@ def write_prediction_metadata(
         "checkpoint_sha256": _sha256(checkpoint) if checkpoint else None,
         "decision_threshold": threshold,
         "rows": int(len(df)),
-        "scenarios": int(df["scenario"].nunique()) if "scenario" in df.columns else None,
+        "scenarios": int(df["scenario"].nunique())
+        if "scenario" in df.columns
+        else None,
         "config_file": os.path.abspath(args.config),
         "normalizer_stats": getattr(args, "normalizer_stats", None),
         "data_path": getattr(args, "data_path", None),
@@ -614,8 +616,7 @@ def main_cli(args):
 
     compute_dc_ac = getattr(args, "compute_dc_ac_metrics", False)
     if compute_dc_ac:
-        sn_mva = config_args.data.baseMVA
-        for grid_name in config_args.data.networks:
+        for grid_name, sn_mva in zip(config_args.data.networks, litGrid.base_mva):
             raw_dir = os.path.join(args.data_path, grid_name, "raw")
             print(f"\nComputing ground-truth AC/DC metrics for {grid_name}...")
             compute_ac_dc_metrics(artifacts_dir, raw_dir, grid_name, sn_mva)

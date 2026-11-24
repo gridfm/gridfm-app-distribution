@@ -4,7 +4,8 @@ data:
   networks: ["scenario_33meshed"]   # Networks loaded as separate folders
   scenarios: [57155]                # Number of scenarios loaded from the CSV files
   normalization: "HeteroDataMVANormalizer"  # data normalization to pu on MVA base
-  baseMVA: 100                      # Base MVA for normalization
+  baseMVA: [100.0]                  # MVA base of each network, one per network in the order of networks:
+                                    # the base_mva of its network_info.txt (checked before normalisation)
   mask_value: 0.0                   # Initial value for masked parameters
   val_ratio: 0.1                    # ratio of data for validation
   test_ratio: 0.1                   # ratio of data for testing

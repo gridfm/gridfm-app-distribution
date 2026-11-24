@@ -7,7 +7,9 @@ data:
   networks: ["tutorial_case33bw"]
   scenarios: [2000]                 # overwritten by the notebook after generation
   normalization: "HeteroDataMVANormalizer"
-  baseMVA: 100
+  baseMVA: [100.0]                 # MVA base of each network (base_mva in its network_info.txt), one per
+                                    # network; overwritten by the notebook from the generated network_info.txt.
+                                    # From a terminal, set it to that file's base_mva (the run stops otherwise).
   mask_value: 0.0
   val_ratio: 0.1
   test_ratio: 0.1

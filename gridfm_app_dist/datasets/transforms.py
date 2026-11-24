@@ -112,6 +112,9 @@ class LoadGridParamsFromPath(BaseTransform):
     def forward(self, data):
         if hasattr(data, "is_normalized"):
             self.normalizer.baseMVA = data.baseMVA
+            # the sample's own network MVA base (set by the normaliser)
+            if hasattr(data, "baseMVA_orig"):
+                self.normalizer.baseMVA_orig = float(data.baseMVA_orig)
             grid_data = deepcopy(self.grid_data)
             self.normalizer.transform(grid_data)
         else:
@@ -155,6 +158,9 @@ class LoadGridParamsFromPathVLD(BaseTransform):
     def forward(self, data):
         if hasattr(data, "is_normalized"):
             self.normalizer.baseMVA = data.baseMVA
+            # the sample's own network MVA base (set by the normaliser)
+            if hasattr(data, "baseMVA_orig"):
+                self.normalizer.baseMVA_orig = float(data.baseMVA_orig)
             grid_data = deepcopy(self.grid_data)
             self.normalizer.transform(grid_data)
         else:

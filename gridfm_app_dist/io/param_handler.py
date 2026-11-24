@@ -14,6 +14,7 @@ from gridfm_app_dist.io.registries import (
 )
 
 import argparse
+import inspect
 from torch_geometric.transforms import Compose
 
 if TYPE_CHECKING:  # annotation only; a runtime import here is circular
@@ -64,13 +65,26 @@ class NestedNamespace(argparse.Namespace):
         return dict(items)
 
 
-def load_normalizer(args):
-    """Load the appropriate data normalization method."""
+def load_normalizer(args, base_mva=None):
+    """Load the appropriate data normalization method.
+
+    ``base_mva``: MVA base of the network this normaliser serves (its entry of
+    ``data.baseMVA``). Passed to normalisers that take it; for a normaliser
+    class without that argument it is set as ``baseMVA_orig`` after creation.
+    """
     method = args.data.normalization
     try:
-        return NORMALIZERS_REGISTRY.create(method, args)
+        cls = NORMALIZERS_REGISTRY.get(method)
     except KeyError:
         raise ValueError(f"Unknown transformation: {method}")
+    if base_mva is None:
+        return cls(args)
+    if "base_mva" in inspect.signature(cls.__init__).parameters:
+        return cls(args, base_mva=base_mva)
+    normalizer = cls(args)
+    if hasattr(normalizer, "baseMVA_orig"):
+        normalizer.baseMVA_orig = float(base_mva)
+    return normalizer
 
 
 def get_loss_function(args):

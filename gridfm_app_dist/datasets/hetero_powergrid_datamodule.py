@@ -16,6 +16,7 @@ from gridfm_app_dist.datasets.utils import (
     split_dataset_by_load_scenario_idx,
 )
 from gridfm_app_dist.datasets.powergrid_hetero_dataset import HeteroGridDatasetDisk
+from gridfm_app_dist.datasets.network_info import check_base_mva
 import numpy as np
 import random
 import warnings
@@ -63,7 +64,10 @@ class LitGridHeteroDataModule(L.LightningDataModule):
     Notes:
         - Preprocessing is only performed on rank 0 in distributed settings.
         - Subsets and splits are deterministic based on the provided random seed.
-        - Normalizers are loaded for each network independently.
+        - Normalizers are loaded for each network independently, each with the
+          network's own MVA base (``data.baseMVA``, one value per network), which
+          is checked against the network's ``network_info.txt`` when the
+          datamodule is created (``datasets/network_info.py``).
         - Test and predict dataloaders are returned as lists, one per dataset.
 
     Example:
@@ -102,6 +106,10 @@ class LitGridHeteroDataModule(L.LightningDataModule):
             False,
         )
         self.args = args
+        # One MVA base per network (data.baseMVA), checked against each
+        # network's network_info.txt here, before any normaliser is built,
+        # fitted or restored. Raises on any mismatch or missing file.
+        self.base_mva = check_base_mva(args, data_dir)
         self.normalizer_stats_path = normalizer_stats_path
         self.data_normalizers = []
         self.datasets = []
@@ -129,7 +137,8 @@ class LitGridHeteroDataModule(L.LightningDataModule):
             print(f"Loaded normalizer stats from {self.normalizer_stats_path}")
 
         for i, network in enumerate(self.args.data.networks):
-            data_normalizer = load_normalizer(args=self.args)
+            # each network is normalised with its own MVA base
+            data_normalizer = load_normalizer(args=self.args, base_mva=self.base_mva[i])
             self.data_normalizers.append(data_normalizer)
 
             # Create torch dataset (normalizer is NOT yet fitted)
@@ -218,7 +227,12 @@ class LitGridHeteroDataModule(L.LightningDataModule):
             )
             if use_saved:
                 print(f"Restoring normalizer for {network} from saved stats")
-                data_normalizer.fit_from_dict(saved_stats[network])
+                try:
+                    data_normalizer.fit_from_dict(saved_stats[network])
+                except ValueError as err:
+                    raise ValueError(
+                        f"{network}: {err} (statistics file: {self.normalizer_stats_path})",
+                    ) from err
             else:
                 self._fit_normalizer(
                     data_normalizer,
