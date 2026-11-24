@@ -6,8 +6,6 @@ pandapower net, which the data generator writes to
 ``<data_path>/<network>/network_info.txt`` as ``base_mva``. The admittances
 (Yff/Yft) and shunts (GS/BS) in the processed data are in per unit on that base,
 so the normaliser converts them with ``base_mva(network) / fitted_baseMVA``.
-A single base for all networks (the old ``baseMVA: 100``) scaled them wrongly by
-``sn_mva / 100`` on every network whose base is not 100.
 
 Config (one value per network, in the order of ``data.networks``)::
 
@@ -16,8 +14,7 @@ Config (one value per network, in the order of ``data.networks``)::
       baseMVA:  [1.0,               100.0,             0.01]
       check_base_mva: true     # default; false only to evaluate legacy checkpoints
 
-A mapping ``baseMVA: {scenario_kerber_2: 1.0, ...}`` is accepted as well. A single
-number is accepted only when ``data.networks`` has exactly one network.
+A single number is accepted only when ``data.networks`` has exactly one network.
 
 ``check_base_mva`` compares the configured bases with ``network_info.txt`` and
 raises one error that lists every mismatch or missing file. The datamodule runs

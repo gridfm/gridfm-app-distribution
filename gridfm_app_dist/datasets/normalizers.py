@@ -51,8 +51,7 @@ def _initial_base_mva(args, base_mva):
     """MVA base of the network a normaliser serves (``baseMVA_orig``).
 
     The datamodule passes each network's own ``data.baseMVA`` entry. Without it,
-    a single-network config gives its one value; otherwise the base stays None
-    until it is set (e.g. from ``data.baseMVA_orig`` of a normalised sample).
+    the base stays None until it is set
     """
     if base_mva is not None:
         return float(base_mva)

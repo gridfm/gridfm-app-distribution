@@ -44,7 +44,6 @@ from gridfm_app_dist.datasets.globals import (
     # Branch feature indices
     BRANCH_BASE_STATUS_E,
     BRANCH_CONT_E,
-    #####################
     # PBE slack power from the label
     PG_BUS_H,
 )
@@ -435,17 +434,14 @@ class LossPerDim(BaseLoss):
         }
 
 
-#######################
 # ---------------------------------------------------------------------------
-# VLD (Voltage Loss Detection) task loss
+# Voltage Loss Detection (VLD) task loss - Topology-first voltage loss detection
 # ---------------------------------------------------------------------------
 
 
 @LOSS_REGISTRY.register("VLDTopologyLoss")
 class VLDTopologyLoss(BaseLoss):
     """
-    Topology-first voltage loss detection objective.
-
     Expected bus tensor layouts:
       pred_dict["bus"]   : [Vm, Va, Pg, Qg, status_logit]
       target_dict["bus"] : [Pd, Qd, Qg, Vm, Va, bus_status_target]
@@ -454,8 +450,7 @@ class VLDTopologyLoss(BaseLoss):
 
     y_reach is the hard REF-reachability built from the input flags (BFS over
     available branches through available buses, ``_build_graph_reachability``).
-    It is computed and used inside this loss only; MaskedMSE and PBE act on Vm
-    independently of it.
+    It is computed and used inside this loss only;
 
     Status head (status logit z), two BCE terms:
       * topology term (primary) - BCE(z, y_reach) on EVERY bus, class-weighted on
@@ -468,17 +463,13 @@ class VLDTopologyLoss(BaseLoss):
         on a conflict bus still follows reachability at the 1 / (1 + w_off)
         threshold (the label only softens the probability). With correctly
         generated data C is empty and the anchor is 0. ``anchor_scope: all`` applies the anchor to every bus,
-        class-weighted on the label (the earlier behaviour without conflict
-        overrides).
+        class-weighted on the label
 
     Voltage head (Vm), independent of the status head:
       * off-Vm term - Vm -> 0 (L2 + lambda_1 * L1) on buses with y_reach = 0;
       * on-Vm term  - (Vm - Vm_target)^2 on buses with y_reach = 1.
       Both masks come from y_reach only; neither the status logit nor its
-      probability enters the voltage terms, and the voltage terms do not enter
-      the status logit, so the two heads are trained independently. MaskedMSE
-      and PBE keep acting on Vm on their own (MaskedMSE's Vm target is 0 on
-      de-energised buses, so it reinforces the off-Vm term).
+      probability enters the voltage terms
 
     Decision threshold: weighting the 0-class by w moves the BCE optimum from the
     posterior q to q / (q + w (1 - q)), so the threshold is 1 / (1 + w_off), which
@@ -548,8 +539,7 @@ class VLDTopologyLoss(BaseLoss):
 
         # EMA momentum for the "auto" class weight. Because the decision threshold is 1/(1+w_off), w_off must be stable across batches;
         # the EMA tracks the dataset-level ratio so a batch with a single de-energised bus can neither dominate the gradient nor move the threshold.
-        # 0.0 falls back to the per-batch estimate.
-        # Updated only in training mode; frozen (and checkpointed) for evaluation.
+        # 0.0 falls back to the per-batch estimate. Updated only in training mode; frozen (and checkpointed) for evaluation.
         self.pos_weight_momentum = float(
             getattr(loss_args, "pos_weight_momentum", 0.99),
         )
@@ -561,7 +551,7 @@ class VLDTopologyLoss(BaseLoss):
         self.register_buffer("ema_initialised", torch.zeros((), dtype=torch.bool))
 
     def _resolve_off_weight(self, sup_status, device):
-        """Minority-class weight w_off (eq. 6), EMA-smoothed."""
+        """Minority-class weight w_off EMA-smoothed."""
         n_off = (sup_status < 0.5).sum()
         n_on = (sup_status >= 0.5).sum()
         if self.unreachable_pos_weight != "auto":
@@ -576,7 +566,7 @@ class VLDTopologyLoss(BaseLoss):
                 self.max_pos_weight,
             )
         else:
-            batch_weight = None  # nothing to estimate from in this batch
+            batch_weight = None
 
         if self.pos_weight_momentum == 0.0:
             return (
@@ -759,7 +749,7 @@ class VLDTopologyLoss(BaseLoss):
             ones,
         )
 
-        # omega_i, eq. (8): the topology (reachability) term is the primary status
+        # omega_i: the topology (reachability) term is the primary status
         # supervision on EVERY bus, conflict buses included.
         topology_weights = topology_confidence * class_weight
         topology_bce_raw = F.binary_cross_entropy_with_logits(
@@ -770,7 +760,7 @@ class VLDTopologyLoss(BaseLoss):
         topology_norm = topology_weights.sum().clamp_min(1e-8)
         topology_bce = (topology_weights * topology_bce_raw).sum() / topology_norm
 
-        # nu_i, eq. (9): dataset-label anchor, secondary.
+        # nu_i,: dataset-label anchor, secondary.
         anchor_bce_raw = F.binary_cross_entropy_with_logits(
             status_logit,
             target_status,
@@ -794,8 +784,7 @@ class VLDTopologyLoss(BaseLoss):
                 anchor_weights.sum().clamp_min(1e-8)
             )
 
-        # Voltage supervision is keyed on reachability ONLY. The status logit and
-        # its probability never enter the voltage terms (independent heads).
+        # Voltage supervision is keyed on reachability ONLY.
         unreachable_mask = (topo_target < 0.5).float()
         reachable_mask = (topo_target >= 0.5).float()
 
@@ -825,7 +814,7 @@ class VLDTopologyLoss(BaseLoss):
         target_acc = (pred_status == target_status).float().mean()
 
         # Accuracy on this task is dominated by the energised majority class and- reads ~99% for a model that never predicts an outage.
-        # Report recall and precision on the DE-ENERGISED class, which is what VLD is for,
+        # Report recall and precision on the DE-ENERGISED class
         with torch.no_grad():
             off_true = target_status < 0.5
             on_true = ~off_true
@@ -844,15 +833,14 @@ class VLDTopologyLoss(BaseLoss):
             balanced_acc = 0.5 * (recall_off + recall_on)
 
             # Calibration on the buses that are unambiguously energised: BFS says reachable AND the label says 1.
-            # Should sit near 1; if it sits near 1/(1+w_off) the class weight is what is pulling it down.
             clear_on = on_true & (topo_target >= 0.5)
             mean_prob_clear_on = (
                 status_prob * clear_on
             ).sum() / clear_on.sum().clamp_min(1)
 
             # Data-integrity check: with a correct BFS, the derived reachability label should agree with the dataset's own bus_status_target.
-            # A persistent disagreement means one of the two is wrong - most likely the contingency flags or the source definition -
-            # and it is worth seeing on the training curves rather than discovering later.
+            # A persistent disagreement means one of the two is wrong - loss reports the data inconsistencies in the training curves
+            # Can be skipped if data is 100% checked
             topo_vs_target = conflict.float().mean()
 
             # Split the disagreement by direction: reach=0/label=1 is the case that the legacy "zero" rule turned into false de-energisations.
@@ -885,17 +873,13 @@ class VLDTopologyLoss(BaseLoss):
             "VLD Decision Threshold": threshold.detach().float(),
         }
 
-
-#######################
-
-
 # ---------------------------------------------------------------------------
-# Physics-based losses carried over unchanged from gridfm-graphkit.
+# Loss based in node residuals from Power Balance equations (PBE Loss)
 # ---------------------------------------------------------------------------
+
 @LOSS_REGISTRY.register("PBE")
 class PBELoss(BaseLoss):
-    """Loss based on the Power Balance Equations (heterogeneous convention).
-
+    """
     Options (``loss_args``). The defaults reproduce the original
     loss exactly for every task except VoltageLossDetection.
 
@@ -936,9 +920,6 @@ class PBELoss(BaseLoss):
         Add the bus shunts ``GS + jBS`` to the diagonal of Y. Read from
         ``x_dict`` or ``model.latest_x_dict``. Only used by the new path.
 
-    Any non-legacy option switches to the new implementation (real-valued
-    scatter arithmetic, shunts, safe magnitude); with all
-    options at their legacy values the original code path runs unchanged.
     The reported ``Power loss in p.u.`` is always the un-normalised mean
     residual magnitude over the nodes in scope; the training value is ``loss``.
     """
@@ -1126,16 +1107,10 @@ class PBELoss(BaseLoss):
 
     # ------------------------------------------------------------------
     # New path: electrical nodes, slack power from the label,
-    # optional energised scope and per-graph load normalisation.
     # ------------------------------------------------------------------
     @staticmethod
     def _injection(vr, vi, edge_index, edge_attr, num_bus, gs=None, bs=None):
-        """Nodal injection S = V * conj(Y V) in real arithmetic.
-
-        Same convention as the legacy complex code: row = ``edge_index[0]``,
-        off-diagonal entry ``Yft``, diagonal = sum of ``Yff`` over the bus's
-        outgoing edges (+ shunt). Returns (P_inj, Q_inj).
-        """
+        """Nodal injection S = V * conj(Y V) in real arithmetic."""
         src, dst = edge_index[0], edge_index[1]
         g_ft = edge_attr[:, YFT_TF_R]
         b_ft = edge_attr[:, YFT_TF_I]

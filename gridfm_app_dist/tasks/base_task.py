@@ -52,10 +52,9 @@ class BaseTask(L.LightningModule, ABC):
         self._batch_start_time = time.perf_counter()
 
     # ------------------------------------------------------------------
-    # Non-finite guard
+    # Non-finite guard against a single NaN/Inf loss or gradient used to reach AdamW and poison every weight
+    # as the best-model exports it and saves a non-finite state
     # ------------------------------------------------------------------
-    # A single NaN/Inf loss or gradient used to reach AdamW and poison every
-    # weight; the best-model export then saved a non-finite state. The guard:
     #   1. training_step: a non-finite loss is replaced by 0 * sum(params), so
     #      backward still runs on every rank (DDP stays in step) but contributes
     #      zero gradient; the step is flagged.

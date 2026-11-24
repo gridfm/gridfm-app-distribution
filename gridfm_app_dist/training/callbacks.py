@@ -233,10 +233,6 @@ class SaveBestModelStateDict(Callback):
                 )
                 self.best_model_path = None
 
-        # Resuming, and a best file already exists in this run but no state was
-        # restored (a checkpoint written before this callback was stateful, or a
-        # changed monitor): do not let the first epoch after the resume overwrite
-        # it blindly. A fresh run keeps the original behaviour.
         resuming = bool(getattr(trainer, "ckpt_path", None))
         if (
             resuming
@@ -262,8 +258,6 @@ class SaveBestModelStateDict(Callback):
                     f"recorded score; kept a copy at {backup} before it is overwritten.",
                 )
 
-        # The sidecar is written with the state dict, so it wins if the job was
-        # killed between the two (file of epoch N, checkpoint still saying M).
         if self.best_model_path and os.path.exists(self.best_model_path):
             sidecar = self._read_sidecar(self.best_model_path)
             if sidecar and sidecar.get("monitor") == self.monitor:
