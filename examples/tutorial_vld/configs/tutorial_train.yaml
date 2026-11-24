@@ -16,16 +16,17 @@ data:
   workers: 0
 
 model:
-  type: GNS_heterogeneous
-  attention_head: 2
-  dropout: 0.1
-  edge_dim: 13
-  hidden_size: 32
-  input_bus_dim: 17
-  input_gen_dim: 6
+  type: GNS_heterogeneous           # was GPSTransformer (not available in new repo)
+  attention_head: 8
+  dropout: 0.0                      # Model has to pass messages over all the layers to reach furtheest bus from source
+  edge_dim: 13                      # Additional edge features BRANCH_BASE_STATUS_E(11) + BRANCH_CONT_E(12)
+  hidden_size: 128
+  input_bus_dim: 17                 # Additional bus features + BUS_BASE_STATUS_H(15) + BUS_CONT_H(16)
+  input_gen_dim: 6                  # Additional generator node-type feature dim
   output_bus_dim: 5
   output_gen_dim: 1
-  num_layers: 2
+  num_layers: 36                    # Depending on the hop depth of the networks, the furthest bus is used to set the max layers (check hop_depth.py)
+  topology_gating: message_mask     # drop unavailable branches (base off or hit) from message passing;
 
 training:
   batch_size: 16
