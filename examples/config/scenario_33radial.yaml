@@ -25,7 +25,7 @@ model:
   num_layers: 24
   topology_gating: message_mask     # drop unavailable branches (base off or hit) from message passing;
                                     # set it from the first stage of a sequence, not mid-sequence
-  edge_input_transform: asinh       # Phase 1.4: asinh(Y / edge_input_scale) on the admittance columns
+  edge_input_transform: asinh       # asinh(Y / edge_input_scale) on the admittance columns
   edge_input_scale: 1.0             #   seen by the edge MLP only (physics keeps raw Y). Default: none.
                                     #   A checkpoint must be used with the setting it was trained with.
 
@@ -36,20 +36,20 @@ training:
   test_on_best_checkpoint: true           # test the exported best_model_state_dict.pt, not the last epoch
   losses: ["MaskedMSE", "PBE", "VLDTopologyLoss"]
   loss_weights: [0.05, 0.15, 0.80]
-  gradient_clip_val: 1.0           # Phase 1.6: global-norm clipping (VLD default 1.0; null = off)
-  max_nonfinite_steps: 20          # Phase 1.6: stop after this many consecutive NaN/Inf steps
+  gradient_clip_val: 1.0           # global-norm clipping (VLD default 1.0; null = off)
+  max_nonfinite_steps: 20          # stop after this many consecutive NaN/Inf steps
 
 
   loss_args: # parameters for tuning the loss functions
-    - # ---- MaskedMSE (Phase 1.3) -------------------------------------------
+    - # ---- MaskedMSE --------------------------------------------------------
       # Vm/Va only: the masked Qg (PV/REF) is decoded from the predicted
       # voltages and the masked gen Pg is the slack generator, both of the
       # order of the network load. VLD default; legacy = [Vm, Va, Qg, gen_Pg].
       channels: [Vm, Va]
-    - # ---- PBE (Phase 1.2) -------------------------------------------------
+    - # ---- PBE --------------------------------------------------------------
       slack_power: label           # slack P/Q from the label (VLD default); gen_rows = legacy
       merge_switches: true         # balance on electrical nodes (VLD default)
-      bus_scope: energised         # energised buses only (VLD default; see vld_phase1_fixes.md, 1.2c)
+      bus_scope: energised         # energised buses only (VLD default)
       normalisation: load          # per-scenario |S_load| scaling; default none
     - # ---- VLDTopologyLoss -------------------------------------------------
       # Status-logit terms, eq. (18). The topology term (BFS reachability) is
@@ -111,8 +111,8 @@ callbacks:
 
 task:
   task_name: VoltageLossDetection
-  ref_vm_input: true               # Phase 1.5: slack Vm set-point is an input (default false)
-  mask_pv_vm: true                 # Phase 1.5: PV Vm is predicted, not copied (default false)
+  ref_vm_input: true               # slack Vm set-point is an input (default false)
+  mask_pv_vm: true                 # PV Vm is predicted, not copied (default false)
 
 evaluation:                        # VLD metrics + figures of the model's predictions (after test / predict)
   enabled: true                    # --no-evaluate on the command line also switches it off

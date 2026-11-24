@@ -330,7 +330,7 @@ class AddVLDHeteroMask(BaseTransform):
     - masks only physical reconstruction channels
     - leaves appended topology/status metadata unmasked
 
-    Options (``task.ref_vm_input`` / ``task.mask_pv_vm``; plan item 1.5). Both
+    Options (``task.ref_vm_input`` / ``task.mask_pv_vm``). Both
     default to False, which reproduces the original masking exactly.
 
     ref_vm_input: leave the REF (slack) bus Vm unmasked, i.e. give the model the
@@ -341,7 +341,7 @@ class AddVLDHeteroMask(BaseTransform):
         that only repeats what the contingency flags already say.)
     mask_pv_vm: mask the PV bus Vm. The input value is the POST-contingency
         voltage, i.e. 0 at a de-energised PV bus, so unmasked it leaks the
-        answer (Phase 0: 33-55 % of the IEEE33 PV inputs are 0) and is copied
+        answer (33-55 % of the IEEE33 PV inputs are 0) and is copied
         straight to the output. Masked, the model predicts it like any PQ Vm.
     """
 

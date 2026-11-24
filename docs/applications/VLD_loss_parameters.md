@@ -181,10 +181,11 @@ voltages in directions unrelated to $\mathcal{L}_{\text{off}}$. For VLD, PBE is
 therefore restricted to energised buses by default (`bus_scope: energised`; `all`
 restores the old behaviour).
 
-The PBE and MaskedMSE options added in Phase 1 are:
+PBE and MaskedMSE take these options (see the YAML configuration reference for
+their values and defaults):
 
-- PBE: slack power from the label, closed switches merged into electrical nodes, energised scope, per-scenario load normalisation;
-- MaskedMSE: `channels` (VLD default `[Vm, Va]`).
-
-They are documented, with the reasoning and the recommended values, in
-[VLD Phase 1 fixes](vld_phase1_fixes.md).
+- PBE: the slack power is taken from the label, closed bus-bus switches are merged
+  into electrical nodes, the balance is restricted to energised buses, and the loss
+  can be normalised per scenario by the load level;
+- MaskedMSE: `channels` (VLD default `[Vm, Va]`), which leaves out the Qg and slack
+  Pg values computed by the physics decoder.

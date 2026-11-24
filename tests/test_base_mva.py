@@ -1,5 +1,5 @@
 """
-Per-network MVA base (plan item 1.1): ``data.baseMVA`` holds one value per
+Per-network MVA base: ``data.baseMVA`` holds one value per
 network, it is checked against each network's network_info.txt before any
 normalisation, and each network's normaliser converts the admittances and
 shunts with its own base.

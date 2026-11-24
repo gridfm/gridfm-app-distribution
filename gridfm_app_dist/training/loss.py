@@ -45,7 +45,7 @@ from gridfm_app_dist.datasets.globals import (
     BRANCH_BASE_STATUS_E,
     BRANCH_CONT_E,
     #####################
-    # Phase 1 (PBE slack power from the label)
+    # PBE slack power from the label
     PG_BUS_H,
 )
 
@@ -112,8 +112,8 @@ class MaskedMSELoss(BaseLoss):
     input/mask layout). Only the reconstruction channels inside that shared
     region are used, so widening the bus label cannot silently misalign the loss.
 
-    Channels (``loss_args.channels``, plan item 1.3)
-    ------------------------------------------------
+    Channels (``loss_args.channels``)
+    ---------------------------------
     Which masked entries enter the MSE: any of ``Vm``, ``Va``, ``Qg`` (bus) and
     ``gen_Pg`` (generator rows). Default: all four, except for
     VoltageLossDetection, where the default is ``[Vm, Va]``.
@@ -123,8 +123,8 @@ class MaskedMSELoss(BaseLoss):
     and the masked generator ``Pg`` rows are the slack generators, whose value is
     of the order of the whole network load in p.u. Both are therefore several
     orders of magnitude larger than Vm/Va and dominate the MSE and its gradient
-    on large or unfamiliar networks (Phase 0: MaskedMSE 3e7, Vm-decoder gradient
-    norm 2e9 on kerber_2). The voltage channels carry the reconstruction signal;
+    on large or unfamiliar networks (MaskedMSE up to 3e7 and Vm-decoder gradient
+    norms up to 2e9 were measured on kerber_2). The voltage channels carry the reconstruction signal;
     the power balance is enforced by PBE.
     """
 
@@ -896,14 +896,14 @@ class VLDTopologyLoss(BaseLoss):
 class PBELoss(BaseLoss):
     """Loss based on the Power Balance Equations (heterogeneous convention).
 
-    Options (``loss_args``; plan item 1.2). The defaults reproduce the original
+    Options (``loss_args``). The defaults reproduce the original
     loss exactly for every task except VoltageLossDetection.
 
     ``slack_power``: ``label`` | ``gen_rows``
         Active power of buses whose generator Pg is not predicted.
         ``gen_rows`` (legacy) sums the generator rows only, so the ext_grid
         injection is missing on networks that model the slack as an ext_grid
-        (about half of the PBE at a perfect prediction in Phase 0). ``label``
+        (about half of the PBE at a perfect prediction). ``label``
         takes the per-bus net generation label ``PG_BUS_H`` (generators +
         ext_grid) and, at REF buses, the labelled slack P and Q, so the slack
         bus contributes a real balance check: neither the irreducible error of
@@ -1125,7 +1125,7 @@ class PBELoss(BaseLoss):
         return result
 
     # ------------------------------------------------------------------
-    # New path (plan item 1.2): electrical nodes, slack power from the label,
+    # New path: electrical nodes, slack power from the label,
     # optional energised scope and per-graph load normalisation.
     # ------------------------------------------------------------------
     @staticmethod

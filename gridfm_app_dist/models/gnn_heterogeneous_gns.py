@@ -107,8 +107,8 @@ class GNS_heterogeneous(nn.Module):
         Transform of the admittance columns (Yff/Yft, real and imaginary) of
         the bus-bus edge features before ``input_proj_edge`` only:
         ``asinh(Y / edge_input_scale)``, i.e. about sign(Y) * ln(2|Y|) for
-        large values. The raw admittances span five decades across networks
-        (Phase 0), so the edge MLP extrapolates on every network outside the
+        large values. The raw admittances span five decades across networks,
+        so the edge MLP extrapolates on every network outside the
         training range. The physics layers (branch flows, residuals) and the
         losses keep the raw values. Opt-in: a model trained with one setting
         must be evaluated with the same setting.

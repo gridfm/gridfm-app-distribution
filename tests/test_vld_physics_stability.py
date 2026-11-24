@@ -1,14 +1,14 @@
 """
-Phase 1 of the VLD improvement plan (items 1.2-1.7): unit tests on toy graphs.
+VLD physics loss, inputs and training stability: unit tests on toy graphs.
 
-  1.2  PBELoss: slack power from the label, closed switches merged into
-       electrical nodes, energised scope, per-graph load normalisation,
-       legacy path unchanged.
-  1.3  MaskedMSE channels.
-  1.4  model.edge_input_transform.
-  1.5  AddVLDHeteroMask(ref_vm_input, mask_pv_vm).
-  1.6  non-finite guard, gradient clipping kwargs, no non-finite export.
-  1.7  prediction file naming and metadata.
+  PBE          PBELoss: slack power from the label, closed switches merged into
+               electrical nodes, energised scope, per-graph load normalisation,
+               legacy path unchanged.
+  MaskedMSE    channels.
+  edge input   model.edge_input_transform.
+  masking      AddVLDHeteroMask(ref_vm_input, mask_pv_vm).
+  stability    non-finite guard, gradient clipping kwargs, no non-finite export.
+  predictions  prediction file naming and metadata.
 
 Toy power-flow graph (float64, consistent by construction):
 
@@ -187,7 +187,7 @@ def _pbe(**opts):
     return PBELoss(NestedNamespace(**opts), None)
 
 
-# ------------------------------------------------------------------ 1.2 PBE
+# ------------------------------------------------------------------ PBE
 def test_pbe_defaults_legacy_for_other_tasks_and_new_for_vld():
     assert PBELoss().legacy
     assert PBELoss(
@@ -368,7 +368,7 @@ def test_shunts_enter_the_new_path():
     assert without < 1e-5 < with_sh
 
 
-# ------------------------------------------------------------------ 1.3 MaskedMSE
+# ------------------------------------------------------------------ MaskedMSE
 def _mse_batch():
     torch.manual_seed(1)
     pred = {"bus": torch.randn(4, 5), "gen": torch.randn(2, 1)}
@@ -408,7 +408,7 @@ def test_masked_mse_channel_validation():
             MaskedMSELoss(NestedNamespace(channels=bad), None)
 
 
-# ------------------------------------------------------------------ 1.5 masking
+# ------------------------------------------------------------------ masking
 def _hetero():
     from torch_geometric.data import HeteroData
 
@@ -461,7 +461,7 @@ def test_task_transforms_pass_the_flags():
     assert len(masks) == 1 and masks[0].ref_vm_input and masks[0].mask_pv_vm
 
 
-# ------------------------------------------------------------------ 1.4 edge input
+# ------------------------------------------------------------------ edge input
 def _model(**model_opts):
     from gridfm_app_dist.models.gnn_heterogeneous_gns import GNS_heterogeneous
 
@@ -500,7 +500,7 @@ def test_edge_input_transform():
         _model(edge_input_transform="asinh", edge_input_scale=0.0)
 
 
-# ------------------------------------------------------------------ 1.6 stability
+# ------------------------------------------------------------------ stability
 def _task(max_nonfinite_steps=3):
     pytest.importorskip("lightning")
     from gridfm_app_dist.tasks.base_task import BaseTask
@@ -621,7 +621,7 @@ def test_gradient_clipping_kwargs():
         gradient_clipping_kwargs(bad)
 
 
-# ------------------------------------------------------------------ 1.7 predictions
+# ------------------------------------------------------------------ predictions
 def test_prediction_tag_and_metadata(tmp_path):
     pytest.importorskip("lightning")
     pd = pytest.importorskip("pandas")

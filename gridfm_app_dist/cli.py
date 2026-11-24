@@ -323,7 +323,7 @@ def _global_rank() -> int:
 
 
 def gradient_clipping_kwargs(config_args):
-    """Trainer kwargs for gradient clipping (plan item 1.6).
+    """Trainer kwargs for gradient clipping.
 
     ``training.gradient_clip_val``: clip the global gradient norm to this value
     (default 1.0 for VoltageLossDetection, off for the other tasks; ``null`` or
@@ -346,7 +346,7 @@ def gradient_clipping_kwargs(config_args):
 
 
 def prediction_tag(args, best_info=None):
-    """(tag, checkpoint path) naming a prediction file (plan item 1.7).
+    """(tag, checkpoint path) naming a prediction file.
 
     evaluate / predict: the stem of ``--model_path``. train / finetune: ``best``
     when the exported best state was tested, else ``last``.

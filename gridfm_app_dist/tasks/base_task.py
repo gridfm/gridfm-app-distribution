@@ -52,7 +52,7 @@ class BaseTask(L.LightningModule, ABC):
         self._batch_start_time = time.perf_counter()
 
     # ------------------------------------------------------------------
-    # Non-finite guard (plan item 1.6)
+    # Non-finite guard
     # ------------------------------------------------------------------
     # A single NaN/Inf loss or gradient used to reach AdamW and poison every
     # weight; the best-model export then saved a non-finite state. The guard:

@@ -96,7 +96,7 @@ These two flags control the VLD masking. Both default to `false`, which gives th
 - `ref_vm_input: true` gives the slack bus Vm set-point as an input.
 - `mask_pv_vm: true` predicts the PV bus Vm instead of copying its post-contingency input. That input is 0 at de-energised PV buses, so copying it leaks the answer.
 
-Use the same values for training and evaluation. See [VLD Phase 1 fixes](../applications/vld_phase1_fixes.md).
+Use the same values for training and evaluation.
 
 ---
 
@@ -228,7 +228,7 @@ Common `loss_args` patterns:
 - `LayeredWeightedPhysics`: `{base_weight: <float>}`
 - `LossPerDim`: `{dim: VM|VA|P_in|Q_in, loss_str: MAE|MSE}`
 - `MaskedMSE`: `{channels: [Vm, Va, Qg, gen_Pg]}` (any subset; the default is `[Vm, Va]` for VLD and all four otherwise).
-- `PBE`: `{slack_power: label|gen_rows, merge_switches: <bool>, bus_scope: all|energised, normalisation: none|load, switch_tol: <float>, include_shunts: <bool>}`. The VLD defaults are `label`, `true`, `energised`, `none`; for the other tasks they are `gen_rows`, `false`, `all`, `none` (the original loss). See [VLD Phase 1 fixes](../applications/vld_phase1_fixes.md).
+- `PBE`: `{slack_power: label|gen_rows, merge_switches: <bool>, bus_scope: all|energised, normalisation: none|load, switch_tol: <float>, include_shunts: <bool>}`. The VLD defaults are `label`, `true`, `energised`, `none`; for the other tasks they are `gen_rows`, `false`, `all`, `none` (the original loss).
 - `VLDTopologyLoss`: see [VLD loss parameters](../applications/VLD_loss_parameters.md).
 - `MaskedGenMSE`, `MaskedBusMSE`, `QgViolationPenalty`, `MSE`: `{}`
 
