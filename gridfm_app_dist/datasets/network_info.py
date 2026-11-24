@@ -91,7 +91,10 @@ def info_base_mva(info):
 def _as_mapping(raw):
     if isinstance(raw, dict):
         return dict(raw)
-    if isinstance(raw, argparse.Namespace):  # NestedNamespace turns a YAML mapping into one
+    if isinstance(
+        raw,
+        argparse.Namespace,
+    ):  # NestedNamespace turns a YAML mapping into one
         return vars(raw)
     return None
 
@@ -147,9 +150,13 @@ def configured_base_mva(args):
         try:
             base = float(value)
         except (TypeError, ValueError):
-            raise BaseMVAError(f"data.baseMVA for {network} is not a number: {value!r}.")
+            raise BaseMVAError(
+                f"data.baseMVA for {network} is not a number: {value!r}.",
+            )
         if not math.isfinite(base) or base <= 0:
-            raise BaseMVAError(f"data.baseMVA for {network} must be > 0, got {value!r}.")
+            raise BaseMVAError(
+                f"data.baseMVA for {network} must be > 0, got {value!r}.",
+            )
         bases.append(base)
     return bases
 
@@ -185,7 +192,13 @@ def compare_with_network_info(args, data_dir):
         info_base = info_base_mva(read_network_info(path))
         if info_base is None:
             rows.append(
-                (network, base, None, path, f"{path} has no {' / '.join(BASE_KEYS)} entry"),
+                (
+                    network,
+                    base,
+                    None,
+                    path,
+                    f"{path} has no {' / '.join(BASE_KEYS)} entry",
+                ),
             )
         elif not base_mva_matches(base, info_base):
             rows.append(
@@ -221,7 +234,11 @@ def check_base_mva(args, data_dir, enabled=None):
             "legacy common base.",
         )
         return bases
-    problems = [f"{row[0]}: {row[4]}" for row in compare_with_network_info(args, data_dir) if row[4]]
+    problems = [
+        f"{row[0]}: {row[4]}"
+        for row in compare_with_network_info(args, data_dir)
+        if row[4]
+    ]
     if problems:
         raise BaseMVAError(
             "MVA base check failed (data.baseMVA vs network_info.txt):\n  - "
@@ -251,7 +268,11 @@ def main(argv=None):
         ),
     )
     parser.add_argument("--config", required=True, help="training / evaluation YAML")
-    parser.add_argument("--data_path", default="data", help="same --data_path as the run")
+    parser.add_argument(
+        "--data_path",
+        default="data",
+        help="same --data_path as the run",
+    )
     a = parser.parse_args(argv)
 
     import yaml
@@ -275,10 +296,15 @@ def main(argv=None):
     print(f"{'network':<{width}}  {'config':>10}  {'network_info':>12}  status")
     for network, base, info_base, _, problem in rows:
         shown = "-" if info_base is None else f"{info_base:g}"
-        print(f"{network:<{width}}  {base:>10g}  {shown:>12}  {'MISMATCH' if problem else 'ok'}")
+        print(
+            f"{network:<{width}}  {base:>10g}  {shown:>12}  {'MISMATCH' if problem else 'ok'}",
+        )
     problems = [f"{r[0]}: {r[4]}" for r in rows if r[4]]
     if problems:
-        print("ERROR: MVA base check failed:\n  - " + "\n  - ".join(problems), file=sys.stderr)
+        print(
+            "ERROR: MVA base check failed:\n  - " + "\n  - ".join(problems),
+            file=sys.stderr,
+        )
         return 1
     print(f"MVA base check passed ({a.config}).")
     return 0

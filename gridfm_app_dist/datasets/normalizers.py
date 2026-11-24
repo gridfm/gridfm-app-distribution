@@ -59,6 +59,14 @@ def _initial_base_mva(args, base_mva):
     return single_network_base_mva(args)
 
 
+BUS_EDGE = ("bus", "connects", "bus")
+
+
+def _edge_flow_labels(data):
+    """Branch-flow labels (pf/qf, pt/qt in MW/Mvar) of the bus-bus edges, or None."""
+    return getattr(data[BUS_EDGE], "y", None)
+
+
 def _restore_base_mva(configured, saved, network_hint=""):
     """Base to use after restoring saved stats; they must match the configured one."""
     saved = float(saved.item() if hasattr(saved, "item") else saved)
@@ -143,6 +151,24 @@ class HeteroDataMVANormalizer(Normalizer):
     base values. These base values are usually chosen based on system parameters, such as rated
     voltage. The per-unit conversion ensures that power system equations remain scale-invariant,
     preserving fundamental physical relationships.
+
+    Units (raw units from contingency_data_gen/generation/datakit_extractors.py).
+    B = fitted power base of the network (``baseMVA``), S_n = the network's own
+    MVA base (``baseMVA_orig`` = data.baseMVA entry = sn_mva in network_info.txt):
+
+      Pd, Qd, Qg (bus input/label), PG_BUS_H label,
+      Qg limits, gen Pg (+ limits, label), edge P/Q,
+      edge flow labels, rate_a                      MW, Mvar, MVA  -> x 1/B
+      Yff/Yft (Ytt/Ytf on reverse edges), GS, BS    p.u. on S_n    -> x S_n/B
+      Va, branch angle limits                       degrees        -> radians
+      vn_kv                                         kV             -> / max vn_kv
+      cost coefficients                             EUR            -> sign*log1p
+      Vm and its limits, tap, flags                 unchanged
+
+    With these factors V * conj(Y V) from the normalised admittances and
+    voltages equals the normalised injections and flows for any S_n
+    (tests/test_base_mva.py). HeteroDataPerSampleMVANormalizer applies the same
+    factors with a per-scenario B.
     """
 
     fit_strategy = "fit_on_train"
@@ -286,6 +312,12 @@ class HeteroDataMVANormalizer(Normalizer):
         data.edge_attr_dict[("bus", "connects", "bus")][:, ANG_MIN] *= torch.pi / 180.0
         data.edge_attr_dict[("bus", "connects", "bus")][:, ANG_MAX] *= torch.pi / 180.0
         data.edge_attr_dict[("bus", "connects", "bus")][:, RATE_A] /= self.baseMVA
+
+        # --- Edge label normalization --- branch flows Pf/Qf (Pt/Qt) in MW/Mvar
+        edge_y = _edge_flow_labels(data)
+        if edge_y is not None:
+            edge_y /= self.baseMVA
+
         data.baseMVA = torch.tensor(
             self.baseMVA,
             dtype=data.x_dict["bus"].dtype,
@@ -370,6 +402,9 @@ class HeteroDataMVANormalizer(Normalizer):
         data.edge_attr_dict[("bus", "connects", "bus")][:, ANG_MAX] *= 180.0 / torch.pi
 
         data.edge_attr_dict[("bus", "connects", "bus")][:, RATE_A] *= self.baseMVA
+        edge_y = _edge_flow_labels(data)
+        if edge_y is not None:
+            edge_y *= self.baseMVA
         data.is_normalized = torch.tensor(
             False,
             dtype=torch.bool,
@@ -582,7 +617,8 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         data.y_dict["bus"][:, QD_H] /= b
         data.y_dict["bus"][:, QG_H] /= b
         data.y_dict["bus"][:, VA_H] *= torch.pi / 180.0
-        data.y_dict["bus"][:, PG_BUS_H] *= b  # changed from self.baseMVA
+        # net per-bus generation (gens + ext_grid), MW -> p.u. like Pd/Qd/Qg
+        data.y_dict["bus"][:, PG_BUS_H] /= b
 
         # --- Generator input normalization ---
         data.x_dict["gen"][:, PG_H] /= g
@@ -610,6 +646,25 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         data.edge_attr_dict[("bus", "connects", "bus")][:, ANG_MIN] *= torch.pi / 180.0
         data.edge_attr_dict[("bus", "connects", "bus")][:, ANG_MAX] *= torch.pi / 180.0
         data.edge_attr_dict[("bus", "connects", "bus")][:, RATE_A] /= e_b
+
+        # --- Edge label normalization --- branch flows in MW/Mvar
+        edge_y = _edge_flow_labels(data)
+        if edge_y is not None:
+            edge_y /= e_b.unsqueeze(1)
+
+        # Same sample attributes as HeteroDataMVANormalizer: the power base of
+        # the scenario(s) and the network's MVA base (used by the transforms
+        # that re-normalise grid data and by SimulateMeasurements).
+        data.baseMVA = self._baseMVA_lookup.to(
+            device=data.x_dict["bus"].device,
+            dtype=data.x_dict["bus"].dtype,
+        )[data["scenario_id"]].reshape(-1)
+        if data.baseMVA.numel() == 1:
+            data.baseMVA = data.baseMVA.reshape(())
+        data.baseMVA_orig = torch.tensor(
+            float(self.baseMVA_orig),
+            dtype=data.x_dict["bus"].dtype,
+        )
         data.is_normalized = torch.tensor(
             True,
             dtype=torch.bool,
@@ -648,7 +703,7 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         data.y_dict["bus"][:, PD_H] *= b
         data.y_dict["bus"][:, QD_H] *= b
         data.y_dict["bus"][:, QG_H] *= b
-        data.y_dict["bus"][:, PG_BUS_H] *= b  # changed from self.baseMVA
+        data.y_dict["bus"][:, PG_BUS_H] *= b
 
         # -------- GENERATOR INPUT INVERSE NORMALIZATION --------
         data.x_dict["gen"][:, PG_H] *= g
@@ -677,6 +732,9 @@ class HeteroDataPerSampleMVANormalizer(Normalizer):
         data.edge_attr_dict[("bus", "connects", "bus")][:, ANG_MAX] *= 180.0 / torch.pi
 
         data.edge_attr_dict[("bus", "connects", "bus")][:, RATE_A] *= e_b
+        edge_y = _edge_flow_labels(data)
+        if edge_y is not None:
+            edge_y *= e_b.unsqueeze(1)
         data.is_normalized = torch.tensor(
             False,
             dtype=torch.bool,
