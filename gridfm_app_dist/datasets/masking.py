@@ -329,10 +329,26 @@ class AddVLDHeteroMask(BaseTransform):
     - keeps PF bus-type masks required by the physics decoder
     - masks only physical reconstruction channels
     - leaves appended topology/status metadata unmasked
+
+    Options (``task.ref_vm_input`` / ``task.mask_pv_vm``; plan item 1.5). Both
+    default to False, which reproduces the original masking exactly.
+
+    ref_vm_input: leave the REF (slack) bus Vm unmasked, i.e. give the model the
+        ext_grid voltage set-point as an input. It is known in practice and is
+        the only absolute voltage reference in a radial feeder; without it the
+        model has to infer the voltage level, which feeds the Vm = 0 trap. (If
+        a contingency de-energises the slack bus itself, its input Vm is 0;
+        that only repeats what the contingency flags already say.)
+    mask_pv_vm: mask the PV bus Vm. The input value is the POST-contingency
+        voltage, i.e. 0 at a de-energised PV bus, so unmasked it leaks the
+        answer (Phase 0: 33-55 % of the IEEE33 PV inputs are 0) and is copied
+        straight to the output. Masked, the model predicts it like any PQ Vm.
     """
 
-    def __init__(self):
+    def __init__(self, ref_vm_input=False, mask_pv_vm=False):
         super().__init__()
+        self.ref_vm_input = bool(ref_vm_input)
+        self.mask_pv_vm = bool(mask_pv_vm)
 
     def forward(self, data):
         bus_x = data.x_dict["bus"]
@@ -363,8 +379,10 @@ class AddVLDHeteroMask(BaseTransform):
 
         mask_bus[mask_PV, VA_H] = True
         mask_bus[mask_PV, QG_H] = True
+        if self.mask_pv_vm:
+            mask_bus[mask_PV, VM_H] = True
 
-        mask_bus[mask_REF, VM_H] = True
+        mask_bus[mask_REF, VM_H] = not self.ref_vm_input
         mask_bus[mask_REF, QG_H] = True
 
         gen_bus_edges = data.edge_index_dict[("gen", "connected_to", "bus")]

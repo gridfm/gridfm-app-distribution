@@ -76,7 +76,13 @@ class VoltageLossDetectionTransforms(Compose):
 
         transforms.append(RemoveInactiveBranchesKeepTopology())
         transforms.append(RemoveInactiveGenerators())
-        transforms.append(AddVLDHeteroMask())
+        task_cfg = getattr(args, "task", None)
+        transforms.append(
+            AddVLDHeteroMask(
+                ref_vm_input=getattr(task_cfg, "ref_vm_input", False),
+                mask_pv_vm=getattr(task_cfg, "mask_pv_vm", False),
+            ),
+        )
         transforms.append(ApplyMasking(args=args))
 
         super().__init__(transforms)

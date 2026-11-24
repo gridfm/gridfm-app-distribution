@@ -3,6 +3,14 @@ from gridfm_app_dist.tasks.base_task import BaseTask
 from pytorch_lightning.utilities import rank_zero_only
 
 
+def _bus_batch(batch):
+    """Graph index of every bus in a (mini-)batch, or None if not batched."""
+    try:
+        return batch.batch_dict["bus"]
+    except (AttributeError, KeyError, TypeError):
+        return None
+
+
 class ReconstructionTask(BaseTask):
     """
     PyTorch Lightning task for node feature reconstruction on power grid graphs.
@@ -43,6 +51,9 @@ class ReconstructionTask(BaseTask):
         return self.model(x_dict, edge_index_dict, edge_attr_dict, mask_dict)
 
     def shared_step(self, batch):
+        # Per-bus graph index for losses that normalise per scenario (PBE with
+        # normalisation: load). Same pattern as model.latest_x_dict.
+        self.model.latest_bus_batch = _bus_batch(batch)
         output = self.forward(
             x_dict=batch.x_dict,
             edge_index_dict=batch.edge_index_dict,
@@ -62,6 +73,7 @@ class ReconstructionTask(BaseTask):
 
     def training_step(self, batch):
         _, loss_dict = self.shared_step(batch)
+        loss_dict["loss"] = self.guard_non_finite_loss(loss_dict["loss"])
         current_lr = self.optimizer.param_groups[0]["lr"]
         metrics = {}
         metrics["Training Loss"] = loss_dict["loss"].detach()

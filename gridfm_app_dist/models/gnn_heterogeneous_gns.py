@@ -30,7 +30,15 @@ from gridfm_app_dist.datasets.globals import (
     # Edge feature indices (topology gating)
     BRANCH_BASE_STATUS_E,
     BRANCH_CONT_E,
+    # Edge feature indices (admittances; input transform)
+    YFF_TT_R,
+    YFF_TT_I,
+    YFT_TF_R,
+    YFT_TF_I,
 )
+
+# Admittance columns of the bus-bus edge features.
+ADMITTANCE_COLS = (YFF_TT_R, YFF_TT_I, YFT_TF_R, YFT_TF_I)
 
 
 @MODELS_REGISTRY.register("GNS_heterogeneous")
@@ -95,6 +103,19 @@ class GNS_heterogeneous(nn.Module):
         post-contingency reachability representable in ``num_layers`` hops with
         zero extra parameters. It changes model semantics, so it is opt-in.
 
+    edge_input_transform : "none" (default) | "asinh"
+        Transform of the admittance columns (Yff/Yft, real and imaginary) of
+        the bus-bus edge features before ``input_proj_edge`` only:
+        ``asinh(Y / edge_input_scale)``, i.e. about sign(Y) * ln(2|Y|) for
+        large values. The raw admittances span five decades across networks
+        (Phase 0), so the edge MLP extrapolates on every network outside the
+        training range. The physics layers (branch flows, residuals) and the
+        losses keep the raw values. Opt-in: a model trained with one setting
+        must be evaluated with the same setting.
+
+    edge_input_scale : float (default 1.0)
+        Y0 of the asinh transform (the value below which it is ~linear).
+
     LEGACY-EQUIVALENT CONFIGURATION
     -------------------------------
     To reproduce the previous architecture exactly (same parameter shapes, same
@@ -133,6 +154,8 @@ class GNS_heterogeneous(nn.Module):
         self.physics_gate_init = float(getattr(args.model, "physics_gate_init", 0.0))
         self.ffn_ratio = float(getattr(args.model, "ffn_ratio", 0.0))
         self.topology_gating = getattr(args.model, "topology_gating", "none")
+        self.edge_input_transform = getattr(args.model, "edge_input_transform", "none")
+        self.edge_input_scale = float(getattr(args.model, "edge_input_scale", 1.0))
 
         if self.num_layers < 1:
             raise ValueError(
@@ -153,6 +176,15 @@ class GNS_heterogeneous(nn.Module):
             raise ValueError(
                 "model.residual_mode must be 'always' or 'shape_conditional', "
                 f"got {self.residual_mode!r}.",
+            )
+        if self.edge_input_transform not in ("none", "asinh"):
+            raise ValueError(
+                "model.edge_input_transform must be 'none' or 'asinh', "
+                f"got {self.edge_input_transform!r}.",
+            )
+        if self.edge_input_scale <= 0:
+            raise ValueError(
+                f"model.edge_input_scale must be > 0, got {self.edge_input_scale}.",
             )
         if self.topology_gating not in ("none", "message_mask"):
             raise ValueError(
@@ -386,6 +418,19 @@ class GNS_heterogeneous(nn.Module):
         hit = edge_attr[:, BRANCH_CONT_E] > threshold
         return base_on & (~hit)
 
+    def edge_input(self, key, edge_attr):
+        """Edge features as seen by ``input_proj_edge`` (not by the physics)."""
+        if (
+            self.edge_input_transform == "none"
+            or key != ("bus", "connects", "bus")
+            or edge_attr.size(1) <= max(ADMITTANCE_COLS)
+        ):
+            return edge_attr
+        cols = list(ADMITTANCE_COLS)
+        out = edge_attr.clone()
+        out[:, cols] = torch.asinh(edge_attr[:, cols] / self.edge_input_scale)
+        return out
+
     def forward(self, x_dict, edge_index_dict, edge_attr_dict, mask_dict):
         """
         x_dict: {"bus": Tensor[num_bus, bus_feat], "gen": Tensor[num_gen, gen_feat]}
@@ -437,7 +482,9 @@ class GNS_heterogeneous(nn.Module):
         edge_attr_proj_dict = {}
         for key, edge_attr in edge_attr_dict.items():
             if edge_attr is not None:
-                edge_attr_proj_dict[key] = self.input_proj_edge(edge_attr)
+                edge_attr_proj_dict[key] = self.input_proj_edge(
+                    self.edge_input(key, edge_attr),
+                )
             else:
                 edge_attr_proj_dict[key] = None
 

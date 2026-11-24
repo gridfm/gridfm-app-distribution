@@ -89,6 +89,15 @@ Task name registered in the framework:
 
 - `VoltageLossDetection`
 
+### `task.ref_vm_input`, `task.mask_pv_vm` (VLD, optional)
+
+These two flags control the VLD masking. Both default to `false`, which gives the original masking.
+
+- `ref_vm_input: true` gives the slack bus Vm set-point as an input.
+- `mask_pv_vm: true` predicts the PV bus Vm instead of copying its post-contingency input. That input is 0 at de-energised PV buses, so copying it leaks the answer.
+
+Use the same values for training and evaluation. See [VLD Phase 1 fixes](../applications/vld_phase1_fixes.md).
+
 ---
 
 ## `data` section
@@ -152,6 +161,8 @@ Current configs use the heterogeneous GNS model:
 - `hidden_size`: hidden feature width.
 - `num_layers`: number of stacked message-passing layers.
 - `attention_head`: attention head count per layer.
+- `edge_input_transform` (optional, `none` | `asinh`, default `none`): `asinh(Y / edge_input_scale)` on the admittance columns that feed the edge MLP. The physics layers keep the raw values. A checkpoint must be evaluated with the setting it was trained with.
+- `edge_input_scale` (optional, default `1.0`): $Y_0$ of the asinh transform.
 
 ---
 
@@ -164,6 +175,9 @@ Current configs use the heterogeneous GNS model:
 - `accelerator`: Lightning accelerator (`auto`, `mps`, `cpu`, `gpu`, etc.).
 - `devices`: Lightning device selection (`auto`, integer, list).
 - `strategy`: Lightning strategy (`auto`, `ddp`, etc.).
+- `gradient_clip_val` (optional): clip the global gradient norm to this value. The default is `1.0` for `VoltageLossDetection` and off for the other tasks; `null` or `0` switches it off.
+- `gradient_clip_algorithm` (optional, `norm` | `value`, default `norm`).
+- `max_nonfinite_steps` (optional, default `20`): optimizer steps with a NaN/Inf loss or gradient are skipped. Training stops after this many in a row.
 
 ### Multi-loss configuration
 
@@ -182,12 +196,17 @@ Registered loss names in current code:
 - `LossPerDim`
 - `MaskedMSE`
 - `MSE`
+- `PBE`
+- `VLDTopologyLoss`
 
 Common `loss_args` patterns:
 
 - `LayeredWeightedPhysics`: `{base_weight: <float>}`
 - `LossPerDim`: `{dim: VM|VA|P_in|Q_in, loss_str: MAE|MSE}`
-- `MaskedGenMSE`, `MaskedBusMSE`, `QgViolationPenalty`, `MaskedMSE`, `MSE`: `{}`
+- `MaskedMSE`: `{channels: [Vm, Va, Qg, gen_Pg]}` (any subset; the default is `[Vm, Va]` for VLD and all four otherwise).
+- `PBE`: `{slack_power: label|gen_rows, merge_switches: <bool>, bus_scope: all|energised, normalisation: none|load, switch_tol: <float>, include_shunts: <bool>}`. The VLD defaults are `label`, `true`, `all`, `none`; for the other tasks they are `gen_rows`, `false`, `all`, `none` (the original loss). See [VLD Phase 1 fixes](../applications/vld_phase1_fixes.md).
+- `VLDTopologyLoss`: see [VLD loss parameters](../applications/VLD_loss_parameters.md).
+- `MaskedGenMSE`, `MaskedBusMSE`, `QgViolationPenalty`, `MSE`: `{}`
 
 ---
 

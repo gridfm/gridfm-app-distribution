@@ -174,8 +174,16 @@ class is blind to false de-energisations). Six runs cover the grid.
 ## 6. Interaction with the other losses
 
 `loss_weights: [0.05, 0.15, 0.80]` for `MaskedMSE`, `PBE`, `VLDTopologyLoss`.
-PBE compares the injection implied by $\hat V$ with the dataset's $P_d, Q_d$. If
-the scenario generator leaves pre-contingency load on de-energised buses, PBE
-pulls $\hat V$ up on exactly the buses $\mathcal{L}_{\text{off}}$ pulls down.
-Either confirm loads are zeroed on de-energised buses in the data, mask PBE on
-those buses, or lower its weight.
+PBE compares the injection implied by $\hat V$ with the dataset's $P_d, Q_d$. The
+data keeps the in-service load on de-energised buses, so on those buses PBE has an
+irreducible floor (the unsupplied load) and, away from $\hat V = 0$, pulls the island
+voltages in directions unrelated to $\mathcal{L}_{\text{off}}$. Set
+`bus_scope: energised` in the PBE `loss_args` to restrict it to energised buses.
+
+The PBE and MaskedMSE options added in Phase 1 are:
+
+- PBE: slack power from the label, closed switches merged into electrical nodes, energised scope, per-scenario load normalisation;
+- MaskedMSE: `channels` (VLD default `[Vm, Va]`).
+
+They are documented, with the reasoning and the recommended values, in
+[VLD Phase 1 fixes](vld_phase1_fixes.md).

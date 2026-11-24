@@ -46,6 +46,19 @@ class EpochTimerCallback(Callback):
 VLD_TASK_NAME = "VoltageLossDetection"
 
 
+def non_finite_tensors(state_dict):
+    """Names of floating-point entries of a state dict that hold NaN or Inf."""
+    bad = []
+    for key, value in state_dict.items():
+        if (
+            isinstance(value, torch.Tensor)
+            and value.is_floating_point()
+            and not bool(torch.isfinite(value).all())
+        ):
+            bad.append(key)
+    return bad
+
+
 def validation_monitors(args):
     """
     Validation metrics (name, mode) driving early stopping, the LR schedule and
@@ -265,10 +278,26 @@ class SaveBestModelStateDict(Callback):
         current = trainer.callback_metrics.get(self.monitor)
         if current is None:
             return
+        if not bool(torch.isfinite(torch.as_tensor(current)).all()):
+            print(
+                f"SaveBestModelStateDict: {self.monitor} is not finite at epoch "
+                f"{trainer.current_epoch}; nothing exported.",
+            )
+            return
 
         if (self.mode == "min" and current < self.best_score) or (
             self.mode == "max" and current > self.best_score
         ):
+            # Never export (or record as best) a state with NaN/Inf weights.
+            state_dict = self._canonical_state_dict(pl_module)
+            bad = non_finite_tensors(state_dict)
+            if bad:
+                print(
+                    f"WARNING: SaveBestModelStateDict: epoch {trainer.current_epoch} improved "
+                    f"{self.monitor} but {len(bad)} tensor(s) are not finite "
+                    f"(e.g. {bad[:3]}); the previous best is kept.",
+                )
+                return
             self.best_score = float(current)
 
             model_path = self._current_path(trainer)
@@ -277,7 +306,7 @@ class SaveBestModelStateDict(Callback):
             os.makedirs(os.path.dirname(model_path), exist_ok=True)
             # Atomic write: a job killed mid-save never leaves a truncated file.
             tmp_path = model_path + ".tmp"
-            torch.save(self._canonical_state_dict(pl_module), tmp_path)
+            torch.save(state_dict, tmp_path)
             os.replace(tmp_path, model_path)
             self.best_model_path = model_path
             self.best_epoch = int(trainer.current_epoch)

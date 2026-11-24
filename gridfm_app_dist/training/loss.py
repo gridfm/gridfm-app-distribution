@@ -45,7 +45,18 @@ from gridfm_app_dist.datasets.globals import (
     BRANCH_BASE_STATUS_E,
     BRANCH_CONT_E,
     #####################
+    # Phase 1 (PBE slack power from the label)
+    PG_BUS_H,
 )
+
+
+def _task_name(args):
+    """``args.task.task_name`` or None (args may be None, e.g. in diagnostics)."""
+    return getattr(getattr(args, "task", None), "task_name", None)
+
+
+def _is_vld(args):
+    return _task_name(args) == "VoltageLossDetection"
 
 
 class BaseLoss(nn.Module, ABC):
@@ -100,14 +111,46 @@ class MaskedMSELoss(BaseLoss):
     beyond that they diverge (column 6 is PG_BUS_H in the label but PV_H in the
     input/mask layout). Only the reconstruction channels inside that shared
     region are used, so widening the bus label cannot silently misalign the loss.
+
+    Channels (``loss_args.channels``, plan item 1.3)
+    ------------------------------------------------
+    Which masked entries enter the MSE: any of ``Vm``, ``Va``, ``Qg`` (bus) and
+    ``gen_Pg`` (generator rows). Default: all four, except for
+    VoltageLossDetection, where the default is ``[Vm, Va]``.
+
+    For VLD the bus ``Qg`` at PV/REF buses is not a free prediction: the physics
+    decoder computes it from the predicted voltages (``Q_in + Qd - q_shunt``),
+    and the masked generator ``Pg`` rows are the slack generators, whose value is
+    of the order of the whole network load in p.u. Both are therefore several
+    orders of magnitude larger than Vm/Va and dominate the MSE and its gradient
+    on large or unfamiliar networks (Phase 0: MaskedMSE 3e7, Vm-decoder gradient
+    norm 2e9 on kerber_2). The voltage channels carry the reconstruction signal;
+    the power balance is enforced by PBE.
     """
 
     # (prediction column, label/mask column) for the masked reconstruction channels.
     BUS_COLS = ((VM_OUT, VM_H), (VA_OUT, VA_H), (QG_OUT, QG_H))
+    BUS_CHANNELS = {"Vm": (VM_OUT, VM_H), "Va": (VA_OUT, VA_H), "Qg": (QG_OUT, QG_H)}
+    ALL_CHANNELS = ("Vm", "Va", "Qg", "gen_Pg")
+    VLD_DEFAULT_CHANNELS = ("Vm", "Va")
 
     def __init__(self, loss_args, args):
         super(MaskedMSELoss, self).__init__()
         self.reduction = "mean"
+        channels = getattr(loss_args, "channels", None) if loss_args is not None else None
+        if channels is None:
+            channels = self.VLD_DEFAULT_CHANNELS if _is_vld(args) else self.ALL_CHANNELS
+        if isinstance(channels, str):
+            channels = [channels]
+        unknown = [c for c in channels if c not in self.ALL_CHANNELS]
+        if unknown or not channels:
+            raise ValueError(
+                f"MaskedMSE loss_args.channels must be a non-empty subset of "
+                f"{list(self.ALL_CHANNELS)}, got {channels!r}.",
+            )
+        self.channels = tuple(c for c in self.ALL_CHANNELS if c in channels)
+        self.bus_cols = tuple(self.BUS_CHANNELS[c] for c in self.channels if c in self.BUS_CHANNELS)
+        self.use_gen_pg = "gen_Pg" in self.channels
 
     def forward(
         self,
@@ -123,12 +166,13 @@ class MaskedMSELoss(BaseLoss):
             return {"loss": loss, "Masked MSE loss": loss.detach()}
 
         pred_bus, target_bus, mask_bus = pred["bus"], target["bus"], mask["bus"]
-        selected_pred = [pred_bus[:, p][mask_bus[:, t]] for p, t in self.BUS_COLS]
-        selected_target = [target_bus[:, t][mask_bus[:, t]] for _, t in self.BUS_COLS]
+        selected_pred = [pred_bus[:, p][mask_bus[:, t]] for p, t in self.bus_cols]
+        selected_target = [target_bus[:, t][mask_bus[:, t]] for _, t in self.bus_cols]
 
-        gen_mask = mask["gen"][:, : (PG_H + 1)]
-        selected_pred.append(pred["gen"][:, : (PG_H + 1)][gen_mask])
-        selected_target.append(target["gen"][:, : (PG_H + 1)][gen_mask])
+        if self.use_gen_pg:
+            gen_mask = mask["gen"][:, : (PG_H + 1)]
+            selected_pred.append(pred["gen"][:, : (PG_H + 1)][gen_mask])
+            selected_target.append(target["gen"][:, : (PG_H + 1)][gen_mask])
 
         selected_pred = torch.cat(selected_pred)
         selected_target = torch.cat(selected_target)
@@ -846,7 +890,56 @@ class VLDTopologyLoss(BaseLoss):
 # ---------------------------------------------------------------------------
 @LOSS_REGISTRY.register("PBE")
 class PBELoss(BaseLoss):
-    """Loss based on the Power Balance Equations (heterogeneous convention)."""
+    """Loss based on the Power Balance Equations (heterogeneous convention).
+
+    Options (``loss_args``; plan item 1.2). The defaults reproduce the original
+    loss exactly for every task except VoltageLossDetection.
+
+    ``slack_power``: ``label`` | ``gen_rows``
+        Active power of buses whose generator Pg is not predicted.
+        ``gen_rows`` (legacy) sums the generator rows only, so the ext_grid
+        injection is missing on networks that model the slack as an ext_grid
+        (about half of the PBE at a perfect prediction in Phase 0). ``label``
+        takes the per-bus net generation label ``PG_BUS_H`` (generators +
+        ext_grid) and, at REF buses, the labelled slack P and Q, so the slack
+        bus contributes a real balance check: neither the irreducible error of
+        ``gen_rows`` nor the residual that the decoder's slack Pg/Qg would make
+        zero by construction. Default: ``label`` for VLD, ``gen_rows`` otherwise.
+    ``merge_switches``: bool
+        Closed bus-bus switches appear as in-service edges whose admittance
+        entries are all zero; the two buses are one electrical node, so their
+        separate balances are meaningless (only the sum balances). With
+        ``true`` the residual is summed over each switch-connected group of
+        buses (connected components over switch edges) before the magnitude is
+        taken. Default: ``true`` for VLD, ``false`` otherwise.
+    ``switch_tol``: float (default 0.0)
+        An edge is a switch when ``|Yff_r|, |Yff_i|, |Yft_r|, |Yft_i| <= switch_tol``.
+    ``bus_scope``: ``all`` | ``energised``
+        ``energised`` averages over energised nodes only (label
+        ``BUS_STATUS_TARGET``). De-energised buses keep their in-service load
+        in the labels, so with ``all`` they add an irreducible floor equal to
+        their unsupplied load. Default: ``all`` (see the docs for the trade-off).
+    ``normalisation``: ``none`` | ``load``
+        ``load`` divides each node's residual by the mean load magnitude
+        ``|Pd + jQd|`` over the loaded buses of its own graph (scenario), so the
+        loss is dimensionless and comparable across networks whose loads differ
+        by orders of magnitude. Needs the per-bus graph index, which the task
+        stores as ``model.latest_bus_batch``; without it the whole batch is
+        treated as one graph. Default: ``none``.
+    ``include_shunts``: bool (default true)
+        Add the bus shunts ``GS + jBS`` to the diagonal of Y. Read from
+        ``x_dict`` or ``model.latest_x_dict``. Only used by the new path.
+
+    Any non-legacy option switches to the new implementation (real-valued
+    scatter arithmetic, shunts, safe magnitude); with all
+    options at their legacy values the original code path runs unchanged.
+    The reported ``Power loss in p.u.`` is always the un-normalised mean
+    residual magnitude over the nodes in scope; the training value is ``loss``.
+    """
+
+    SLACK_MODES = ("label", "gen_rows")
+    SCOPES = ("all", "energised")
+    NORMALISATIONS = ("none", "load")
 
     def __init__(self, loss_args=None, args=None, visualization=False):
         super(PBELoss, self).__init__()
@@ -854,6 +947,32 @@ class PBELoss(BaseLoss):
             getattr(loss_args, "visualization", False)
             if loss_args is not None
             else visualization
+        )
+        vld = _is_vld(args)
+
+        def opt(name, default):
+            return getattr(loss_args, name, default) if loss_args is not None else default
+
+        self.slack_power = opt("slack_power", "label" if vld else "gen_rows")
+        self.merge_switches = bool(opt("merge_switches", vld))
+        self.switch_tol = float(opt("switch_tol", 0.0))
+        self.bus_scope = opt("bus_scope", "all")
+        self.normalisation = opt("normalisation", "none")
+        self.include_shunts = bool(opt("include_shunts", True))
+        for name, value, allowed in (
+            ("slack_power", self.slack_power, self.SLACK_MODES),
+            ("bus_scope", self.bus_scope, self.SCOPES),
+            ("normalisation", self.normalisation, self.NORMALISATIONS),
+        ):
+            if value not in allowed:
+                raise ValueError(
+                    f"PBE loss_args.{name} must be one of {list(allowed)}, got {value!r}.",
+                )
+        self.legacy = (
+            self.slack_power == "gen_rows"
+            and not self.merge_switches
+            and self.bus_scope == "all"
+            and self.normalisation == "none"
         )
 
     def forward(
@@ -866,6 +985,16 @@ class PBELoss(BaseLoss):
         model=None,
         x_dict=None,
     ):
+        if not self.legacy:
+            return self._forward_nodes(
+                pred_dict,
+                target_dict,
+                edge_index_dict,
+                edge_attr_dict,
+                mask_dict,
+                model,
+                x_dict,
+            )
         pred_bus = pred_dict["bus"]
         target_bus = target_dict["bus"]
         num_bus = target_bus.size(0)
@@ -986,6 +1115,265 @@ class PBELoss(BaseLoss):
                 torch.imag(S_net - S_injection),
             )
         return result
+
+
+    # ------------------------------------------------------------------
+    # New path (plan item 1.2): electrical nodes, slack power from the label,
+    # optional energised scope and per-graph load normalisation.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _injection(vr, vi, edge_index, edge_attr, num_bus, gs=None, bs=None):
+        """Nodal injection S = V * conj(Y V) in real arithmetic.
+
+        Same convention as the legacy complex code: row = ``edge_index[0]``,
+        off-diagonal entry ``Yft``, diagonal = sum of ``Yff`` over the bus's
+        outgoing edges (+ shunt). Returns (P_inj, Q_inj).
+        """
+        src, dst = edge_index[0], edge_index[1]
+        g_ft = edge_attr[:, YFT_TF_R]
+        b_ft = edge_attr[:, YFT_TF_I]
+        g_d = scatter_add(edge_attr[:, YFF_TT_R], src, dim=0, dim_size=num_bus)
+        b_d = scatter_add(edge_attr[:, YFF_TT_I], src, dim=0, dim_size=num_bus)
+        if gs is not None:
+            g_d = g_d + gs
+        if bs is not None:
+            b_d = b_d + bs
+        i_re = g_d * vr - b_d * vi + scatter_add(
+            g_ft * vr[dst] - b_ft * vi[dst],
+            src,
+            dim=0,
+            dim_size=num_bus,
+        )
+        i_im = g_d * vi + b_d * vr + scatter_add(
+            g_ft * vi[dst] + b_ft * vr[dst],
+            src,
+            dim=0,
+            dim_size=num_bus,
+        )
+        p_inj = vr * i_re + vi * i_im
+        q_inj = vi * i_re - vr * i_im
+        return p_inj, q_inj
+
+    @staticmethod
+    @torch.no_grad()
+    def electrical_nodes(edge_index, is_switch, num_bus):
+        """Electrical node of every bus: connected components over switch edges.
+
+        Min-label propagation with pointer jumping; labels only decrease and
+        stay inside a component, so it converges to the smallest bus index of
+        each component (in a few iterations: switch groups are small).
+        Returns ``(node_of_bus [num_bus], num_nodes)``.
+        """
+        label = torch.arange(num_bus, device=edge_index.device)
+        if num_bus == 0 or not bool(is_switch.any()):
+            return label, num_bus
+        a, b = edge_index[0, is_switch], edge_index[1, is_switch]
+        src = torch.cat([a, b])
+        dst = torch.cat([b, a])
+        for _ in range(num_bus):
+            new = label.scatter_reduce(0, dst, label[src], reduce="amin", include_self=True)
+            new = new[new]
+            if torch.equal(new, label):
+                break
+            label = new
+        _, node = torch.unique(label, return_inverse=True)
+        return node, int(node.max().item()) + 1
+
+    def switch_edges(self, edge_attr):
+        """True for edges whose four admittance entries are (numerically) zero."""
+        y = edge_attr[:, [YFF_TT_R, YFF_TT_I, YFT_TF_R, YFT_TF_I]].abs()
+        return (y <= self.switch_tol).all(dim=1)
+
+    @staticmethod
+    def _input_bus(model, x_dict, num_bus):
+        x_bus = None
+        if x_dict is not None:
+            x_bus = x_dict["bus"]
+        elif model is not None and hasattr(model, "latest_x_dict"):
+            x_bus = model.latest_x_dict.get("bus")
+        if x_bus is None or x_bus.size(0) != num_bus:
+            return None
+        return x_bus
+
+    def _forward_nodes(
+        self,
+        pred_dict,
+        target_dict,
+        edge_index_dict,
+        edge_attr_dict,
+        mask_dict,
+        model,
+        x_dict,
+    ):
+        pred_bus = pred_dict["bus"]
+        target_bus = target_dict["bus"]
+        mask_bus = mask_dict["bus"]
+        num_bus = target_bus.size(0)
+        bus_edge_index = edge_index_dict[("bus", "connects", "bus")]
+        bus_edge_attr = edge_attr_dict[("bus", "connects", "bus")]
+        x_bus = self._input_bus(model, x_dict, num_bus)
+
+        # ---- voltages: prediction where masked, label elsewhere -------------
+        V_m = torch.where(mask_bus[:, VM_H], pred_bus[:, VM_OUT], target_bus[:, VM_H])
+        V_a = torch.where(mask_bus[:, VA_H], pred_bus[:, VA_OUT], target_bus[:, VA_H])
+        vr = V_m * torch.cos(V_a)
+        vi = V_m * torch.sin(V_a)
+
+        gs = bs = None
+        if self.include_shunts and x_bus is not None and x_bus.size(1) > BS:
+            gs = x_bus[:, GS].to(vr.dtype)
+            bs = x_bus[:, BS].to(vr.dtype)
+        p_inj, q_inj = self._injection(
+            vr,
+            vi,
+            bus_edge_index,
+            bus_edge_attr.to(vr.dtype),
+            num_bus,
+            gs,
+            bs,
+        )
+
+        # ---- generation ------------------------------------------------------
+        gen_to_bus = edge_index_dict[("gen", "connected_to", "bus")][1]
+        any_gen_masked = (
+            scatter_add(
+                mask_dict["gen"][:, PG_H].to(vr.dtype),
+                gen_to_bus,
+                dim=0,
+                dim_size=num_bus,
+            )
+            > 0
+        )
+        if pred_bus.size(1) > QG_OUT:
+            Qg = torch.where(mask_bus[:, QG_H], pred_bus[:, QG_OUT], target_bus[:, QG_H])
+        else:
+            Qg = target_bus[:, QG_H]
+
+        if self.slack_power == "label":
+            if target_bus.size(1) <= PG_BUS_H:
+                raise ValueError(
+                    "PBE slack_power='label' needs the per-bus generation label "
+                    f"PG_BUS_H (column {PG_BUS_H}) in the bus targets, which have "
+                    f"{target_bus.size(1)} column(s). Use slack_power: gen_rows.",
+                )
+            ref = self._ref_mask(mask_dict, x_bus, num_bus, target_bus.device)
+            Pg = torch.where(
+                any_gen_masked & ~ref,
+                pred_bus[:, PG_OUT],
+                target_bus[:, PG_BUS_H],
+            )
+            Qg = torch.where(ref, target_bus[:, QG_H], Qg)
+        else:
+            target_pg_agg = scatter_add(
+                target_dict["gen"][:, PG_H],
+                gen_to_bus,
+                dim=0,
+                dim_size=num_bus,
+            )
+            Pg = torch.where(any_gen_masked, pred_bus[:, PG_OUT], target_pg_agg)
+
+        # Same guard as the legacy path: only outputs with >= 6 columns carry PD/QD.
+        if pred_bus.size(1) > BUS_STATUS_TARGET:
+            Pd = torch.where(mask_bus[:, PD_H], pred_bus[:, PD_OUT], target_bus[:, PD_H])
+            Qd = torch.where(mask_bus[:, QD_H], pred_bus[:, QD_OUT], target_bus[:, QD_H])
+        else:
+            Pd = target_bus[:, PD_H]
+            Qd = target_bus[:, QD_H]
+
+        dP = (Pg - Pd) - p_inj
+        dQ = (Qg - Qd) - q_inj
+
+        # ---- electrical nodes (closed switches merged) ----------------------
+        if self.merge_switches and bus_edge_index.numel() > 0:
+            node, num_nodes = self.electrical_nodes(
+                bus_edge_index,
+                self.switch_edges(bus_edge_attr),
+                num_bus,
+            )
+            dP_n = scatter_add(dP, node, dim=0, dim_size=num_nodes)
+            dQ_n = scatter_add(dQ, node, dim=0, dim_size=num_nodes)
+        else:
+            node = torch.arange(num_bus, device=dP.device)
+            num_nodes = num_bus
+            dP_n, dQ_n = dP, dQ
+        # |dS| with a finite gradient at an exactly zero residual: the inner
+        # where keeps sqrt away from 0, the outer one returns the exact 0.
+        sq = dP_n**2 + dQ_n**2
+        pos = sq > 0
+        mag = torch.where(
+            pos,
+            torch.sqrt(torch.where(pos, sq, torch.ones_like(sq))),
+            torch.zeros_like(sq),
+        )
+
+        # ---- scope -----------------------------------------------------------
+        if self.bus_scope == "energised":
+            if target_bus.size(1) <= BUS_STATUS_TARGET:
+                raise ValueError(
+                    "PBE bus_scope='energised' needs the bus status label "
+                    f"BUS_STATUS_TARGET (column {BUS_STATUS_TARGET}).",
+                )
+            on_bus = (target_bus[:, BUS_STATUS_TARGET] > 0.5).to(mag.dtype)
+            in_scope = (
+                scatter_add(on_bus, node, dim=0, dim_size=num_nodes) > 0
+            ).to(mag.dtype)
+        else:
+            in_scope = torch.ones_like(mag)
+        n_scope = in_scope.sum().clamp_min(1.0)
+
+        # ---- per-graph load normalisation ------------------------------------
+        if self.normalisation == "load":
+            weight = self._load_weight(model, target_bus, node, num_nodes, mag.dtype)
+            loss = (mag * weight * in_scope).sum() / n_scope
+        else:
+            loss = (mag * in_scope).sum() / n_scope
+
+        result = {
+            "loss": loss,
+            "Power loss in p.u.": ((mag * in_scope).sum() / n_scope).detach(),
+            "Active Power Loss in p.u.": ((dP_n.abs() * in_scope).sum() / n_scope).detach(),
+            "Reactive Power Loss in p.u.": ((dQ_n.abs() * in_scope).sum() / n_scope).detach(),
+        }
+        if self.normalisation == "load":
+            result["Power loss (load-normalised)"] = loss.detach()
+        if self.visualization:
+            # per bus (not per node), as before, so the plots keep one value per bus
+            result["Nodal Active Power Loss in p.u."] = dP.abs()
+            result["Nodal Reactive Power Loss in p.u."] = dQ.abs()
+        return result
+
+    @staticmethod
+    def _ref_mask(mask_dict, x_bus, num_bus, device):
+        if "REF" in mask_dict and mask_dict["REF"] is not None:
+            ref = mask_dict["REF"]
+            if ref.numel() == num_bus:
+                return ref.bool().reshape(-1)
+        if x_bus is not None and x_bus.size(1) > REF_H:
+            return x_bus[:, REF_H] > 0.5
+        raise ValueError(
+            "PBE slack_power='label' needs the REF buses: mask_dict['REF'] or the "
+            "input REF flag (model.latest_x_dict).",
+        )
+
+    @staticmethod
+    @torch.no_grad()
+    def _load_weight(model, target_bus, node, num_nodes, dtype):
+        """1 / (mean |S_load| over the loaded buses of each node's graph)."""
+        num_bus = target_bus.size(0)
+        device = target_bus.device
+        batch = getattr(model, "latest_bus_batch", None) if model is not None else None
+        if batch is None or batch.numel() != num_bus:
+            batch = torch.zeros(num_bus, dtype=torch.long, device=device)
+        batch = batch.to(device=device, dtype=torch.long)
+        num_graphs = int(batch.max().item()) + 1 if num_bus > 0 else 1
+        s_load = torch.sqrt(target_bus[:, PD_H] ** 2 + target_bus[:, QD_H] ** 2).to(dtype)
+        loaded = (s_load > 0).to(dtype)
+        total = scatter_add(s_load, batch, dim=0, dim_size=num_graphs)
+        count = scatter_add(loaded, batch, dim=0, dim_size=num_graphs)
+        scale = torch.where(count > 0, total / count.clamp_min(1.0), torch.ones_like(total))
+        node_graph = torch.zeros(num_nodes, dtype=torch.long, device=device)
+        node_graph.scatter_(0, node, batch)
+        return 1.0 / scale[node_graph]
 
 
 @LOSS_REGISTRY.register("QgViolationPenalty")

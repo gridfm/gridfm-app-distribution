@@ -4,16 +4,21 @@ from gridfm_app_dist.io.registries import DATASET_WRAPPER_REGISTRY
 from gridfm_app_dist.training.callbacks import (
     ConfigPatienceEarlyStopping,
     SaveBestModelStateDict,
+    non_finite_tensors,
     validation_monitors,
 )
 from gridfm_app_dist.training.checkpointing import (
     load_best_state_for_test,
     resolve_resume,
 )
+import datetime
+import hashlib
 import inspect
 import importlib
+import json
 import numpy as np
 import os
+import re
 import time
 import yaml
 import torch
@@ -317,6 +322,99 @@ def _global_rank() -> int:
     return 0
 
 
+def gradient_clipping_kwargs(config_args):
+    """Trainer kwargs for gradient clipping (plan item 1.6).
+
+    ``training.gradient_clip_val``: clip the global gradient norm to this value
+    (default 1.0 for VoltageLossDetection, off for the other tasks; ``null`` or
+    0 switches it off). ``training.gradient_clip_algorithm``: ``norm`` (default)
+    or ``value``.
+    """
+    training = config_args.training
+    is_vld = getattr(getattr(config_args, "task", None), "task_name", None) == (
+        "VoltageLossDetection"
+    )
+    clip = getattr(training, "gradient_clip_val", 1.0 if is_vld else None)
+    if clip is None or float(clip) <= 0:
+        return {}
+    algorithm = getattr(training, "gradient_clip_algorithm", "norm")
+    if algorithm not in ("norm", "value"):
+        raise ValueError(
+            f"training.gradient_clip_algorithm must be 'norm' or 'value', got {algorithm!r}.",
+        )
+    return {"gradient_clip_val": float(clip), "gradient_clip_algorithm": algorithm}
+
+
+def prediction_tag(args, best_info=None):
+    """(tag, checkpoint path) naming a prediction file (plan item 1.7).
+
+    evaluate / predict: the stem of ``--model_path``. train / finetune: ``best``
+    when the exported best state was tested, else ``last``.
+    """
+    if args.command in ("train", "finetune"):
+        if best_info:
+            return "best", best_info[0]
+        return "last", None
+    model_path = getattr(args, "model_path", None)
+    if not model_path:
+        return "model", None
+    stem = os.path.splitext(os.path.basename(model_path))[0]
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", stem) or "model", model_path
+
+
+def _sha256(path, chunk=1 << 20):
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for block in iter(lambda: f.read(chunk), b""):
+                h.update(block)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def write_prediction_metadata(
+    out_path,
+    df,
+    args,
+    config,
+    grid_name,
+    tag,
+    checkpoint,
+    best_info=None,
+):
+    """``<predictions>.json`` next to the parquet: checkpoint, threshold, config."""
+    threshold = None
+    if "threshold" in df.columns and len(df):
+        values = np.unique(df["threshold"].to_numpy())
+        threshold = float(values[0]) if values.size == 1 else [float(v) for v in values]
+    meta = {
+        "grid": grid_name,
+        "command": args.command,
+        "checkpoint_tag": tag,
+        "checkpoint": os.path.abspath(checkpoint) if checkpoint else None,
+        "checkpoint_sha256": _sha256(checkpoint) if checkpoint else None,
+        "decision_threshold": threshold,
+        "rows": int(len(df)),
+        "scenarios": int(df["scenario"].nunique()) if "scenario" in df.columns else None,
+        "config_file": os.path.abspath(args.config),
+        "normalizer_stats": getattr(args, "normalizer_stats", None),
+        "data_path": getattr(args, "data_path", None),
+        "created_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(
+            timespec="seconds",
+        ),
+        "config": config,
+    }
+    if best_info:
+        meta.update(
+            best_epoch=best_info[1],
+            best_score=best_info[2],
+            best_monitor=best_info[3],
+        )
+    with open(os.path.splitext(out_path)[0] + ".json", "w") as f:
+        json.dump(meta, f, indent=2, default=str)
+
+
 def main_cli(args):
     if getattr(args, "tf32", False):
         torch.set_float32_matmul_precision("high")  # enables TF32 on Ampere+ GPUs
@@ -387,6 +485,13 @@ def main_cli(args):
     if args.command != "train" and not resume_ckpt:
         print(f"Loading model weights from {args.model_path}")
         state_dict = torch.load(args.model_path, map_location="cpu")
+        bad = non_finite_tensors(state_dict)
+        if bad:
+            raise ValueError(
+                f"{args.model_path} contains NaN/Inf in {len(bad)} tensor(s), e.g. "
+                f"{bad[:5]}. It was exported after training diverged and cannot be "
+                "used; take an earlier checkpoint.",
+            )
         # Non-strict so that checkpoints saved before the VLDTopologyLoss EMA
         # buffers (loss_fn.*.ema_off_weight / ema_initialised) existed still
         # load; they then fall back to the per-batch decision threshold.
@@ -430,6 +535,7 @@ def main_cli(args):
         print(f"Compiling model with torch.compile(mode='{compile_mode}')")
         model.model = torch.compile(model.model, mode=compile_mode)
 
+    best_info = None  # (path, epoch, score, monitor) of the state tested after fit
     trainer_kwargs = {}
     if precision:
         trainer_kwargs["precision"] = precision
@@ -447,6 +553,7 @@ def main_cli(args):
         max_epochs=config_args.training.epochs,
         callbacks=training_callbacks,
         **trainer_kwargs,
+        **gradient_clipping_kwargs(config_args),
         profiler=profiler,
     )
     if args.command == "train" or args.command == "finetune":
@@ -464,7 +571,7 @@ def main_cli(args):
         trainer.fit(model=model, datamodule=litGrid, **fit_kwargs)
         # Test the exported best state, not whatever the last epoch left in memory.
         if getattr(config_args.training, "test_on_best_checkpoint", True):
-            load_best_state_for_test(model, training_callbacks)
+            best_info = load_best_state_for_test(model, training_callbacks)
 
     # The test phase MUST run on EVERY rank. VLDTask.on_test_end calls
     # dist.gather_object(self.test_outputs, gathered, dst=0), a collective over
@@ -558,9 +665,24 @@ def main_cli(args):
         else:
             output_dir = os.path.join(artifacts_dir, "test")
         os.makedirs(output_dir, exist_ok=True)
-        out_path = os.path.join(output_dir, f"{grid_name}_predictions.parquet")
+        # One file per (grid, checkpoint), so predictions of different models in
+        # the same folder never overwrite each other; the sidecar records which
+        # weights, threshold and config produced them.
+        tag, checkpoint = prediction_tag(args, best_info)
+        stem = f"{grid_name}_{tag}"
+        out_path = os.path.join(output_dir, f"{stem}_predictions.parquet")
         df.to_parquet(out_path, index=False)
-        print(f"Saved predictions to {out_path}")
+        write_prediction_metadata(
+            out_path,
+            df,
+            args=args,
+            config=base_config,
+            grid_name=grid_name,
+            tag=tag,
+            checkpoint=checkpoint,
+            best_info=best_info,
+        )
+        print(f"Saved predictions to {out_path} (+ .json metadata)")
 
         if run_evaluation:
             if not is_vld:
@@ -569,4 +691,4 @@ def main_cli(args):
                 )
             elif hasattr(model, "_run_evaluation"):
                 # Same evaluator the test path uses (metrics + figures, logged to MLflow when an MLflow logger is active).
-                model._run_evaluation(df, os.path.join(output_dir, f"{grid_name}_eval"))
+                model._run_evaluation(df, os.path.join(output_dir, f"{stem}_eval"))
